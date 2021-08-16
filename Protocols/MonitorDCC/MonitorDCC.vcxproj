@@ -11,9 +11,9 @@
     </ProjectConfiguration>
   </ItemGroup>
   <PropertyGroup Label="Globals">
-    <ProjectGuid>{C5F80730-F44F-4478-BDAE-6634EFC2CA88}</ProjectGuid>
-    <RootNamespace>Protocols</RootNamespace>
-    <ProjectName>DCC_NMRA</ProjectName>
+    <ProjectGuid>{D0CA0460-1AF7-4ED8-988F-454489331E48}</ProjectGuid>
+    <RootNamespace>MonitorDCC</RootNamespace>
+    <ProjectName>MonitorDCC</ProjectName>
   </PropertyGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.Default.props" />
   <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Debug|Win32'" Label="Configuration">
@@ -77,8 +77,8 @@
       <WarningLevel>Level3</WarningLevel>
       <Optimization>Disabled</Optimization>
       <SDLCheck>true</SDLCheck>
-      <AdditionalIncludeDirectories>$(ProjectDir)..\DCC_NMRA;C:\Users\gebruiker\Documents\Arduino\libraries\NmraDcc-master;C:\Program Files (x86)\arduino\hardware\arduino\avr\cores\arduino;C:\Program Files (x86)\arduino\hardware\arduino\avr\variants\standard;C:\Users\gebruiker\AppData\Local\arduino15\packages\arduino\tools\avr-gcc\7.3.0-atmel3.6.1-arduino7\\lib\gcc\avr\7.3.0\include;C:\Users\gebruiker\AppData\Local\arduino15\packages\arduino\tools\avr-gcc\7.3.0-atmel3.6.1-arduino7\avr\include;C:\Users\gebruiker\AppData\Local\arduino15\packages\arduino\tools\avr-gcc\7.3.0-atmel3.6.1-arduino7\\lib\gcc\avr\7.3.0\include;C:\Users\gebruiker\AppData\Local\arduino15\packages\arduino\tools\avr-gcc\7.3.0-atmel3.6.1-arduino7\avr\include-fixed;C:\Users\gebruiker\AppData\Local\arduino15\packages\arduino\tools\avr-gcc\7.3.0-atmel3.6.1-arduino7\avr\include\avr;C:\Users\gebruiker\AppData\Local\arduino15\packages\arduino\tools\avr-gcc\7.3.0-atmel3.6.1-arduino7\lib\gcc\avr\4.9.2\include;C:\Users\gebruiker\AppData\Local\arduino15\packages\arduino\tools\avr-gcc\7.3.0-atmel3.6.1-arduino7\lib\gcc\avr\4.9.2\include;C:\Users\gebruiker\AppData\Local\arduino15\packages\arduino\tools\avr-gcc\7.3.0-atmel3.6.1-arduino7\lib\gcc\avr\4.9.3\include;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
-      <ForcedIncludeFiles>$(ProjectDir)__vm\.DCC_NMRA.vsarduino.h;%(ForcedIncludeFiles)</ForcedIncludeFiles>
+      <AdditionalIncludeDirectories>$(ProjectDir)..\MonitorDCC;C:\Program Files (x86)\arduino\hardware\arduino\avr\cores\arduino;C:\Program Files (x86)\arduino\hardware\arduino\avr\variants\standard;C:\Users\gebruiker\AppData\Local\arduino15\packages\arduino\tools\avr-gcc\7.3.0-atmel3.6.1-arduino7\\lib\gcc\avr\7.3.0\include;C:\Users\gebruiker\AppData\Local\arduino15\packages\arduino\tools\avr-gcc\7.3.0-atmel3.6.1-arduino7\avr\include;C:\Users\gebruiker\AppData\Local\arduino15\packages\arduino\tools\avr-gcc\7.3.0-atmel3.6.1-arduino7\\lib\gcc\avr\7.3.0\include;C:\Users\gebruiker\AppData\Local\arduino15\packages\arduino\tools\avr-gcc\7.3.0-atmel3.6.1-arduino7\avr\include-fixed;C:\Users\gebruiker\AppData\Local\arduino15\packages\arduino\tools\avr-gcc\7.3.0-atmel3.6.1-arduino7\avr\include\avr;C:\Users\gebruiker\AppData\Local\arduino15\packages\arduino\tools\avr-gcc\7.3.0-atmel3.6.1-arduino7\lib\gcc\avr\4.9.2\include;C:\Users\gebruiker\AppData\Local\arduino15\packages\arduino\tools\avr-gcc\7.3.0-atmel3.6.1-arduino7\lib\gcc\avr\4.9.2\include;C:\Users\gebruiker\AppData\Local\arduino15\packages\arduino\tools\avr-gcc\7.3.0-atmel3.6.1-arduino7\lib\gcc\avr\4.9.3\include;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
+      <ForcedIncludeFiles>$(ProjectDir)__vm\.MonitorDCC.vsarduino.h;%(ForcedIncludeFiles)</ForcedIncludeFiles>
       <IgnoreStandardIncludePath>true</IgnoreStandardIncludePath>
       <PreprocessorDefinitions>__AVR_atmega328p__;__AVR_ATmega328P__;__AVR_ATmega328p__;F_CPU=16000000L;ARDUINO=108013;ARDUINO_AVR_UNO;ARDUINO_ARCH_AVR;__cplusplus=201103L;_VMICRO_INTELLISENSE;%(PreprocessorDefinitions)</PreprocessorDefinitions>
     </ClCompile>
@@ -107,7 +107,7 @@
     <DebuggerFlavor>VisualMicroDebugger</DebuggerFlavor>
   </PropertyGroup>
   <ItemGroup>
-    <None Include="DCC_NMRA.ino">
+    <None Include="MonitorDCC.ino">
       <FileType>CppCode</FileType>
     </None>
   </ItemGroup>
@@ -116,14 +116,9 @@
     </None>
   </ItemGroup>
   <ItemGroup>
-    <ClInclude Include="__vm\.DCC_NMRA.vsarduino.h" />
+    <ClInclude Include="__vm\.MonitorDCC.vsarduino.h" />
   </ItemGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />
   <ImportGroup Label="ExtensionTargets">
   </ImportGroup>
-  <ProjectExtensions>
-    <VisualStudio>
-      <UserProperties arduino.upload.port="COM15" />
-    </VisualStudio>
-  </ProjectExtensions>
 </Project>
