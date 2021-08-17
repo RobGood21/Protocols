@@ -38,13 +38,14 @@ byte teller; //gebruikt in display test
 
 
 void setup() {
+
 	//start processen
 	Serial.begin(9600);
 	dp.begin(SSD1306_SWITCHCAPVCC, 0x3C);
 	Dcc.pin(0, 2, 1); //interupt number 0; pin 2; pullup to pin2
-	Dcc.init(MAN_ID_DIY, 10, 0b11000000, 0); //idem maar met decoder adres
 
-
+	Dcc.init(MAN_ID_DIY, 10, 0b10000000, 0); //bit6 false, decoder adres callback 'notifyDccAccTurnoutBoard'
+	//bit 7 maakt er een loc decoder van
 
 	//poorten	
 	DDRC &= ~B00001111;
@@ -110,6 +111,18 @@ void SW_exe() {
 	SW_status = read;
 }
 void SW_on(byte sw) {
+	switch (sw) {
+	case 0:
+Dcc.init(MAN_ID_DIY, 10, 0b10000000, 0); //accesoire decoder
+		break;
+	case 1:
+		Dcc.init(MAN_ID_DIY, 10, 0b00000000, 0); //loc decoder
+		break;
+	}
+	
+	
+	
+
 
 
 	//test schakelaars
@@ -123,6 +136,7 @@ void SW_on(byte sw) {
 	dp.setTextSize(1);
 	dp.print(teller);
 	dp.display();
+
 }
 
 void SW_off(byte sw) {
@@ -141,4 +155,13 @@ void SW_off(byte sw) {
 //terugmeldingen (callback) uit libraries (NmraDCC)
 void notifyDccAccTurnoutBoard(uint16_t BoardAddr, uint8_t OutputPair, uint8_t Direction, uint8_t OutputPower) {
 	//called als CV29 bit6 = false decoderadres,channel,poort,onoff (zie setup 'init')
+	Serial.print("Artikel adres: "); Serial.print(BoardAddr);Serial.print("  ch: "); Serial.print(OutputPair);
+	Serial.print("  R-on/off: "); Serial.print(Direction); Serial.print("-"); Serial.println(OutputPower);
+}
+void notifyDccAccTurnoutOutput(uint16_t Addr, uint8_t Direction, uint8_t OutputPower) {
+	Serial.println("jo");
+}
+void notifyDccSpeed(uint16_t Addr, DCC_ADDR_TYPE AddrType, uint8_t Speed, DCC_DIRECTION Dir, DCC_SPEED_STEPS SpeedSteps) {
+	Serial.print("Loc adres: "); Serial.print(Addr); Serial.print("  type: "); Serial.print(AddrType);
+	Serial.print("  speed "); Serial.print(Speed); Serial.print("  dir:"); Serial.print(Dir); Serial.print("Steps: "); Serial.println(SpeedSteps);
 }

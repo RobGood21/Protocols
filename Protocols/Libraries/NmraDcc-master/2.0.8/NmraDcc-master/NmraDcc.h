@@ -240,7 +240,6 @@ public:
 // Flag Bits that are cloned from CV29 relating the DCC Accessory Decoder
 #define FLAGS_CV29_BITS		(FLAGS_OUTPUT_ADDRESS_MODE | FLAGS_DCC_ACCESSORY_DECODER)
 
-
     /*+
      *  pin() is called from setup() and sets up the pin used to receive DCC packets.
      *
