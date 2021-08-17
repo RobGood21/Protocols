@@ -13,13 +13,17 @@ Project("{8BC9CEB8-8B4A-11D0-8D11-00A0C91BC942}") = "Wire-1.0", "Libraries\Wire\
 EndProject
 Project("{8BC9CEB8-8B4A-11D0-8D11-00A0C91BC942}") = "Adafruit_GFX_Library-1.7.5", "Libraries\Adafruit_GFX_Library\1.7.5\Adafruit_GFX_Library\Adafruit_GFX_Library-1.7.5.vcxitems", "{4639CCE9-58F7-431C-B868-622EC40C20F8}"
 EndProject
+Project("{8BC9CEB8-8B4A-11D0-8D11-00A0C91BC942}") = "NmraDcc-master-2.0.8", "Libraries\NmraDcc-master\2.0.8\NmraDcc-master\NmraDcc-master-2.0.8.vcxitems", "{9023D1C1-A79B-4309-B2C3-9FA80D33346B}"
+EndProject
 Global
 	GlobalSection(SharedMSBuildProjectFiles) = preSolution
 		Libraries\Adafruit_GFX_Library\1.7.5\Adafruit_GFX_Library\Adafruit_GFX_Library-1.7.5.vcxitems*{4639cce9-58f7-431c-b868-622ec40c20f8}*SharedItemsImports = 9
+		Libraries\NmraDcc-master\2.0.8\NmraDcc-master\NmraDcc-master-2.0.8.vcxitems*{9023d1c1-a79b-4309-b2c3-9fa80d33346b}*SharedItemsImports = 9
 		Libraries\Wire\1.0\Wire\Wire-1.0.vcxitems*{9a9eb41d-b12c-4edf-9198-018c7c5b7e9d}*SharedItemsImports = 9
 		Libraries\Adafruit_SSD1306\2.1.0\Adafruit_SSD1306\Adafruit_SSD1306-2.1.0.vcxitems*{c105e849-e47a-4841-94bf-fa3d06787843}*SharedItemsImports = 9
 		Libraries\Adafruit_GFX_Library\1.7.5\Adafruit_GFX_Library\Adafruit_GFX_Library-1.7.5.vcxitems*{d0ca0460-1af7-4ed8-988f-454489331e48}*SharedItemsImports = 4
 		Libraries\Adafruit_SSD1306\2.1.0\Adafruit_SSD1306\Adafruit_SSD1306-2.1.0.vcxitems*{d0ca0460-1af7-4ed8-988f-454489331e48}*SharedItemsImports = 4
+		Libraries\NmraDcc-master\2.0.8\NmraDcc-master\NmraDcc-master-2.0.8.vcxitems*{d0ca0460-1af7-4ed8-988f-454489331e48}*SharedItemsImports = 4
 		Libraries\Wire\1.0\Wire\Wire-1.0.vcxitems*{d0ca0460-1af7-4ed8-988f-454489331e48}*SharedItemsImports = 4
 	EndGlobalSection
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
