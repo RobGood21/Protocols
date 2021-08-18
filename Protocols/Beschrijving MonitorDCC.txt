@@ -6,4 +6,4 @@ Max decoderadres =511, 512 wordt door NmraDCC decoder niet verwerkt.
 
 
 MEM_reg instellingen die opgeslagen in EEPROM
-bit 0  Toon uit msg van artikelen
+bit 0  Toon aan en uit, false toon alleen uit de pulsduur dus NA de uit msg, true (default)

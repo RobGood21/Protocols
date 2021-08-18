@@ -48,30 +48,25 @@ struct arts {
 	unsigned long tijd;
 }; arts art[ArtBuffer]; //aantal buffer artikelen
 
-
-
 //variabelen
-byte MEM_reg; 
+byte MEM_reg;
 byte lastmsg[6];
-unsigned long slowtimer;
+byte ART_count; //pointer naar laast verwerkte artikel buffer
 
+unsigned long slowtimer;
 //variabelen schakelaars
 byte SW_status = 15; //holds the last switch status, start as B00001111;
 byte SW_holdcounter[4]; //for scroll functie op buttons
 byte SW_scroll = B0011; //masker welke knoppen kunnen scrollen 1=wel 0=niet
-
 //tbv decoder NmrraDCC
 byte uniek = 0xFF;
-
-
-
-
 //tijdelijke varabelen
 byte teller; //gebruikt in display test
-
+//setup functions
 void MEM_read() {
-	MEM_reg = B00000001;//EEPROM.read(10);
-	//bit0=wel(true) of niet(false) uit msg van accessoires, artikelen tonen en verwerken 
+	//factory eerst maken....
+	MEM_reg =B11111111;//EEPROM.read(10);
+	//bit0=Voor artikelen, true, alleen uit tonen met pulsduur, false aan en uit msg tonen 
 }
 void setup() {
 
@@ -101,7 +96,10 @@ void setup() {
 	dp.setCursor(85, 55);
 	dp.print(version);
 	dp.display();
+
+	MEM_read();
 }
+
 void loop() {
 	//processen
 	Dcc.process();
@@ -155,13 +153,9 @@ void SW_on(byte sw) {
 			Serial.println(art[i].reg, BIN);
 			//Serial.println("  ");
 		}
-
-
-
-		
 		break;
 	case 1:
-		
+		IO_exe();
 		break;
 	}
 
@@ -178,7 +172,6 @@ void SW_on(byte sw) {
 	dp.display();
 
 }
-
 void SW_off(byte sw) {
 	SW_holdcounter[sw] = 0; //reset counter for scroll function 
 
@@ -190,9 +183,6 @@ void SW_off(byte sw) {
 	dp.print("Off "); dp.print(sw);
 	dp.display();
 }
-
-
-
 //terugmeldingen (callback) uit libraries (NmraDCC)
 void notifyDccMsg(DCC_MSG * Msg) {
 
@@ -232,7 +222,7 @@ void notifyDccMsg(DCC_MSG * Msg) {
 				if (bte & (1 << 0))reg |= (1 << 1);//false=rechtdoor, true = afslaan
 
 				//uitvoer naar aparte functie
-				ART_write(adr,reg);
+				ART_write(adr, reg);
 			}
 			//opslaan huidig msg in lastmsg
 			lastmsg[0] = Msg->Data[0];
@@ -249,39 +239,37 @@ void notifyDccMsg(DCC_MSG * Msg) {
 		//adress=255 idle packett
 	}
 }
-
-void ART_write(int adr,byte reg) {
+//functions
+void ART_write(int adr, byte reg) {
 	//verwerkt nieuw 'basic accessory decoder packet (artikel)
 	//als mem_reg bit0 true is de aan en de uit msg beide opslaan en verwerken.
 	//Tijd opslaan in millis() , verschil geeft pulsduur getoont in de Off msg 
 	//bij memreg bit0 false, alleen de On msg verwerken, opslaan en tonen, simpeler dus
 
-	//kijken of msg nieuw is.
-	
-	
+	//kijken of msg nieuw is.	
 	bool nieuw = true; reg |= (1 << 7);
-
 	for (byte i = 0; i < ArtBuffer; i++) {
 		//zoeken naar bezette buffet
-		if (art[i].adres == adr && art[i].reg==reg) {
+		if (art[i].adres == adr && art[i].reg == reg) {
 			nieuw = false;
 			Serial.print("*");
 		}
 	}
 
 	if (nieuw) {
-		Serial.println("new");
+		//Serial.println("new");
 		for (byte i = 0; i < ArtBuffer; i++) {
 			if (~art[i].reg & (1 << 7)) { //vrij gevonden	
 				art[i].adres = adr;
 				art[i].reg = reg;
 				art[i].tijd = millis();
-				Serial.println(i);
-				i=ArtBuffer; //uitspringen
+				//Serial.println(i);
+				i = ArtBuffer; //uitspringen
 			}
 		}
 	}
-	   
+
+	/*
 	Serial.print(" Artikel: "); Serial.print(adr);
 	if (reg & (1 << 1)) {
 		Serial.print(" R");
@@ -295,8 +283,71 @@ void ART_write(int adr,byte reg) {
 	else {
 		Serial.println(" Uit");
 	}
-	
 	//Serial.print("  reg:"); Serial.println(reg, BIN);
+*/
+}
+//IO alles met de uitvoer van de ontvangen msg.
+
+void IO_exe() {
+	//ervoor zorgen dat alle artbuffers in volgorde worden gelezen, dus Art_count
+	byte count = 0; bool read = true;
+	while (read) { //zolang read =true herhalen, volgorde belangrijk
+		read = IO_art();
+		ART_count++;
+		if (ART_count == ArtBuffer)ART_count = 0;
+		count++;
+		if (count == ArtBuffer)read = false; //geen te verwerken artikel gevonden
+	}
+}
+bool IO_art() {
+	bool read = true;
+	if (MEM_reg & (1 << 0)) { //Alleen uit tonen
+		if (art[ART_count].reg & (1 << 7) && ~art[ART_count].reg & (1 << 0)) {
+			Serial.print(F("Acc ")); Serial.print(art[ART_count].adres);
+			if (art[ART_count].reg & (1 << 1)) {
+				Serial.print(" R");
+			}
+			else {
+				Serial.print(" A");
+			}
+			//aan msg zoeken
+			byte r = 0;
+			unsigned int puls;
+			for (byte i = 0; i < ArtBuffer; i++) { 
+				//volgorde belangrijk
+				r = art[i].reg ^ art[ART_count].reg;// reken maar na klopt...
+				if (art[i].adres == art[ART_count].adres && r == 1) {
+					puls =art[ART_count].tijd-art[i].tijd;
+					Serial.print(" []"); Serial.print(puls); Serial.println(F("ms."));					
+					art[i].reg &=~(1 << 7);//free on artbuffer
+					art[ART_count].reg &=~(1 << 7); //free off artbuffer
+					i = ArtBuffer; //exit lus
+				}
+			}
+			read = false;
+		}
+	}
+	else { //Aan en uit tonen
+		if (art[ART_count].reg & (1 << 7)) {
+			Serial.print(F("A-")); Serial.print(art[ART_count].adres);
+			if (art[ART_count].reg & (1 << 1)) {
+				Serial.print("R");
+			}
+			else {
+				Serial.print(" A");
+			}
+
+			if (art[ART_count].reg & (1 << 0)) {
+				Serial.println("+");
+			}
+			else {
+				Serial.println("-");
+			}
+			read = false;
+			art[ART_count].reg &= ~(1 << 7); //free this artbuffer
+		}
+	}
+	return read;
 }
 
 
