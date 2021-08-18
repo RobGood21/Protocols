@@ -1,0 +1,9 @@
+in call back 'notifyDccMsg' wordt verkreggen een array van 6 bytes, zijnde de bytes. 
+Byte 0 eerste byte adress byte wordt gebruikt om de verschillende commands teverdelen.
+Verder meer dan 3 bytes zijn (meestal) voor CV instelling
+Max decoderadres =511, 512 wordt door NmraDCC decoder niet verwerkt.
+
+
+
+MEM_reg instellingen die opgeslagen in EEPROM
+bit 0  Toon uit msg van artikelen

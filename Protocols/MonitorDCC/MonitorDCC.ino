@@ -10,22 +10,49 @@
 
 */
 
+
 char version[] = "V 1.01"; //Openingstekst versie aanduiding
 
 
 //libraries
+
 //#include <Adafruit_GFX.h>
+#include <EEPROM.h>
 #include <Wire.h>
 #include <Adafruit_SSD1306.h>
 #include <NmraDcc.h>
 
 //constanten
+#define ArtBuffer 8 //hoe groot is de artikel buffer?
 
 //constructers
 Adafruit_SSD1306 dp(128, 64, &Wire); // , -1);
 NmraDcc  Dcc;
 
+//strucs
+struct locs {
+	byte reg; //register 
+	int adres;
+
+
+}; locs loc[4]; //4 locomotieven kunnen worden gemonitoord
+
+struct arts {
+	byte reg;//
+	//bit0 artikel true ON, false OFF
+	//bit1 artikel dir true Recht; false afslaan
+	//bit6 is klaar om te tonen. MEM_reg bit0 ???nodig
+	//bit7 is artikel vrij, bezet true, vrij false (tonen?)
+
+	unsigned int adres;
+	unsigned long tijd;
+}; arts art[ArtBuffer]; //aantal buffer artikelen
+
+
+
 //variabelen
+byte MEM_reg; 
+byte lastmsg[6];
 unsigned long slowtimer;
 
 //variabelen schakelaars
@@ -33,10 +60,19 @@ byte SW_status = 15; //holds the last switch status, start as B00001111;
 byte SW_holdcounter[4]; //for scroll functie op buttons
 byte SW_scroll = B0011; //masker welke knoppen kunnen scrollen 1=wel 0=niet
 
+//tbv decoder NmrraDCC
+byte uniek = 0xFF;
+
+
+
+
 //tijdelijke varabelen
 byte teller; //gebruikt in display test
 
-
+void MEM_read() {
+	MEM_reg = B00000001;//EEPROM.read(10);
+	//bit0=wel(true) of niet(false) uit msg van accessoires, artikelen tonen en verwerken 
+}
 void setup() {
 
 	//start processen
@@ -98,7 +134,7 @@ void SW_exe() {
 	}
 	//hold pressed for scroll function
 	for (byte i = 0; i < 4; i++) {
-		if (~read & (1 << i) && SW_scroll & (1<<i)) {
+		if (~read & (1 << i) && SW_scroll & (1 << i)) {
 			if (SW_holdcounter[i] > 30) { //tijdxslowtimer voor scroll begint, tempo scroll komt uit loop, slowevents slowtimer
 				SW_on(i);
 			}
@@ -113,17 +149,21 @@ void SW_exe() {
 void SW_on(byte sw) {
 	switch (sw) {
 	case 0:
-Dcc.init(MAN_ID_DIY, 10, 0b10000000, 0); //accesoire decoder
+
+		for (byte i = 0; i < ArtBuffer; i++) {
+			Serial.print(art[i].adres); Serial.print("  ");
+			Serial.println(art[i].reg, BIN);
+			//Serial.println("  ");
+		}
+
+
+
+		
 		break;
 	case 1:
-		Dcc.init(MAN_ID_DIY, 10, 0b00000000, 0); //loc decoder
+		
 		break;
 	}
-	
-	
-	
-
-
 
 	//test schakelaars
 	teller++;
@@ -142,7 +182,6 @@ Dcc.init(MAN_ID_DIY, 10, 0b10000000, 0); //accesoire decoder
 void SW_off(byte sw) {
 	SW_holdcounter[sw] = 0; //reset counter for scroll function 
 
-
 	//Test schakelaars
 	dp.clearDisplay();
 	dp.setTextColor(WHITE);
@@ -152,16 +191,112 @@ void SW_off(byte sw) {
 	dp.display();
 }
 
+
+
 //terugmeldingen (callback) uit libraries (NmraDCC)
-void notifyDccAccTurnoutBoard(uint16_t BoardAddr, uint8_t OutputPair, uint8_t Direction, uint8_t OutputPower) {
-	//called als CV29 bit6 = false decoderadres,channel,poort,onoff (zie setup 'init')
-	Serial.print("Artikel adres: "); Serial.print(BoardAddr);Serial.print("  ch: "); Serial.print(OutputPair);
-	Serial.print("  R-on/off: "); Serial.print(Direction); Serial.print("-"); Serial.println(OutputPower);
+void notifyDccMsg(DCC_MSG * Msg) {
+
+	byte db;  byte bte;  int adr = 0; byte reg = 0;
+
+	//Filters
+	db = Msg->Data[0];
+	if (db == 0) {	//broadcast voor alle decoder bedoeld
+	}
+	else if (db < 128) {//loc decoder met 7bit adres
+	}
+	else if (db < 192) {//Basic Accessory Decoders with 9 bit addresses and Extended Accessory
+		//decoder adres bepalen
+		bte = db;
+		bte = bte << 2; adr = bte >> 2; //clear bit7 en 6
+		bte = Msg->Data[1];
+		if (~bte & (1 << 6))adr += 256;
+		if (~bte & (1 << 5))adr += 128;
+		if (~bte & (1 << 4))adr += 64;
+
+		//CV of bediening van artikel
+		if (Msg->Data[3] > 0) { //artikel CV instelling
+			//hier in theorie weer twee opties, alle channels of selectieve channel
+			Serial.println("CV");
+		}
+		else { //artikel msg 2 bytes
+			//dubbele na elkaar gestuurde boodschappen uitfilteren.
+			if (lastmsg[0] != Msg->Data[0] || lastmsg[1] != Msg->Data[1]) {
+
+				//dcc adres bepalen
+				adr = adr * 4;
+				if (~bte &(1 << 2))adr -= 2;
+				if (~bte & (1 << 1))adr -= 1;
+
+
+				if (bte & (1 << 3))reg |= (1 << 0); //onoff
+				if (bte & (1 << 0))reg |= (1 << 1);//false=rechtdoor, true = afslaan
+
+				//uitvoer naar aparte functie
+				ART_write(adr,reg);
+			}
+			//opslaan huidig msg in lastmsg
+			lastmsg[0] = Msg->Data[0];
+			lastmsg[1] = Msg->Data[1];
+		}
+	}
+	else if (db < 232) {
+		//Multi-Function Decoders with 14 bit 60 addresses
+	}
+	else if (db < 255) {
+		//Reserved for Future Use
+	}
+	else {
+		//adress=255 idle packett
+	}
 }
-void notifyDccAccTurnoutOutput(uint16_t Addr, uint8_t Direction, uint8_t OutputPower) {
-	Serial.println("jo");
+
+void ART_write(int adr,byte reg) {
+	//verwerkt nieuw 'basic accessory decoder packet (artikel)
+	//als mem_reg bit0 true is de aan en de uit msg beide opslaan en verwerken.
+	//Tijd opslaan in millis() , verschil geeft pulsduur getoont in de Off msg 
+	//bij memreg bit0 false, alleen de On msg verwerken, opslaan en tonen, simpeler dus
+
+	//kijken of msg nieuw is.
+	
+	
+	bool nieuw = true; reg |= (1 << 7);
+
+	for (byte i = 0; i < ArtBuffer; i++) {
+		//zoeken naar bezette buffet
+		if (art[i].adres == adr && art[i].reg==reg) {
+			nieuw = false;
+			Serial.print("*");
+		}
+	}
+
+	if (nieuw) {
+		Serial.println("new");
+		for (byte i = 0; i < ArtBuffer; i++) {
+			if (~art[i].reg & (1 << 7)) { //vrij gevonden	
+				art[i].adres = adr;
+				art[i].reg = reg;
+				art[i].tijd = millis();
+				Serial.println(i);
+				i=ArtBuffer; //uitspringen
+			}
+		}
+	}
+	   
+	Serial.print(" Artikel: "); Serial.print(adr);
+	if (reg & (1 << 1)) {
+		Serial.print(" R");
+	}
+	else {
+		Serial.print(" L");
+	}
+	if (reg & (1 << 0)) {
+		Serial.println(" Aan");
+	}
+	else {
+		Serial.println(" Uit");
+	}
+	
+	//Serial.print("  reg:"); Serial.println(reg, BIN);
 }
-void notifyDccSpeed(uint16_t Addr, DCC_ADDR_TYPE AddrType, uint8_t Speed, DCC_DIRECTION Dir, DCC_SPEED_STEPS SpeedSteps) {
-	Serial.print("Loc adres: "); Serial.print(Addr); Serial.print("  type: "); Serial.print(AddrType);
-	Serial.print("  speed "); Serial.print(Speed); Serial.print("  dir:"); Serial.print(Dir); Serial.print("Steps: "); Serial.println(SpeedSteps);
-}
+
+
