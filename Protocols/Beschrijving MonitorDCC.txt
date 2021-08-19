@@ -3,7 +3,38 @@ Byte 0 eerste byte adress byte wordt gebruikt om de verschillende commands tever
 Verder meer dan 3 bytes zijn (meestal) voor CV instelling
 Max decoderadres =511, 512 wordt door NmraDCC decoder niet verwerkt.
 
+outputs
+pin3 groene led, msg in buffer true 
+pin4 rode led, buffer vol
+
+
+
+bfr[].reg (register van een msg buffer)
+bit0 actief, bevat nieuw msg
+bit1 false=artikel true=loc
+bit2 true msg is CV
+bit3
+bit4
+bit5
+bit6 artikel poort R<>A
+bit7 artikel on/off
+
+
+
 
 
 MEM_reg instellingen die opgeslagen in EEPROM
 bit 0  Toon aan en uit, false toon alleen uit de pulsduur dus NA de uit msg, true (default)
+
+
+
+General purpose register flags
+GPIOR0
+bit0 false buffer leeg, true zit wat in de buffer (groene led?)
+bit1 false ruimte in buffer, true buffer vol (rode led?)
+bit2
+bit3
+bit4
+bit5
+bit6
+bit7
