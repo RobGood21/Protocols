@@ -110,7 +110,7 @@ void loop() {
 	Dcc.process();
 	//slow events
 	if (millis() - slowtimer > 30) {
-		//checkBuffer(); //check status buffer
+		checkBuffer(); //check status buffer
 		slowtimer = millis();
 		SW_exe();
 	}
@@ -270,24 +270,16 @@ void checkBuffer() {
 	GPIOR0 |= (1 << 1); //flag buffer full
 	for (byte i = 0; i < Bsize; i++) {
 		if (bfr[i].reg & (1 << 7)) {
-			//ghost boodschappen...(langer dan (instelbaar xtal sec in de buffer) automatisch leegmaken
-			if (millis() - bfr[i].tijd > AutoDelete) {
-				bfr[i].reg &= ~(1 << 0); //buffer vrijgeven
-			}
-			else {
-				GPIOR0 |= (1 << 0); //buffer niet leeg(groen)
-			}
+			//ghost boodschappen...(langer dan (instelbaar xtal sec in de buffer) automatisch leegmaken		
+			GPIOR0 |= (1 << 0); //buffer niet leeg(groen)
 		}
 		else {
 			GPIOR0 &= ~(1 << 1); //Buffer niet vol (rood)
 		}
 	}
 
-
-
-
 	PORTD &= ~(3 << 3); //clear leds
-	//PORTD &=~(1 << 4);
+	//PORTD &= ~(1 << 4);
 	if (GPIOR0 & (1 << 0))PIND |= (1 << 3);
 	if (GPIOR0 & (1 << 1))PIND |= (1 << 4);
 }
@@ -321,47 +313,83 @@ void ART_write(int adr, byte reg) {
 			}
 		}
 	}
-
-	/*
-	Serial.print(" Artikel: "); Serial.print(adr);
-	if (reg & (1 << 1)) {
-		Serial.print(" R");
-	}
-	else {
-		Serial.print(" L");
-	}
-	if (reg & (1 << 0)) {
-		Serial.println(" Aan");
-	}
-	else {
-		Serial.println(" Uit");
-	}
-	//Serial.print("  reg:"); Serial.println(reg, BIN);
-*/
 }
 
 //IO alles met de uitvoer van de ontvangen msg. periodiek of manual
-
 void IO_exe() {
 	//ervoor zorgen dat alle buffers in volgorde worden gelezen, dus Bcount
+	if (~GPIOR0 & (1 << 0))return; //stoppen als er geen te verwerken msg zijn.
+
+	dp.clearDisplay();
 	byte count = 0; bool read = true;
 	while (read) { //zolang read =true herhalen, volgorde belangrijk
 		read = IO_dp(); //dp=displays msg 
 		Bcount++;
 		if (Bcount == Bsize)Bcount = 0;
-		count++;
-		if (count == Bsize)read = false; //geen te verwerken artikel gevonden
+		//count++; //niet nodig er is zeker een te vererken buffer
+		//if (count == Bsize)read = false; //geen te verwerken buffer gevonden
 	}
-	//hier check of er nog te verwerken buffers over zijn. Zoniet dan groene? led uit. GPIOR0 bit0
-	//beter van niet eerst gewoon een functie in loop, slowevents
+	dp.display();
 }
 
 bool IO_dp() {
+	bool read = true;
+	if (~bfr[Bcount].reg & (1 << 7))return true;
+	
+	//te tonen buffer = Bcount
+	dp.setTextColor(WHITE);
+	dp.setCursor(5, 10);
+	dp.setTextSize(1);
+
+	if (bfr[Bcount].reg & (1 << 6)) { //Locomotief
+
+	}
+	else { //Accesoire
+		if (MEM_reg & (1 << 0)) { //alleen de 'uit' tonen voor leesbaarheid
+			if (bfr[Bcount].reg & (1 << 0)) return true; //alleen 'uit' msg verwerken
+		}
+
+		dp.print(F("Art.")); dp.print(bfr[Bcount].adres);
+		if (bfr[Bcount].reg & (1 << 1)) {
+			dp.print(F(" R"));
+		}
+		else {
+			dp.print(F(" A"));
+		}
+		if (MEM_reg & (1 << 0)) { //alleen uit msg verwerken, dus de aan weghalen en tijd uitrekenen
+
+			unsigned int puls; byte r;
+			for (byte i = 0; i < Bsize; i++) {
+				//volgorde belangrijk
+				r = bfr[i].reg ^ bfr[Bcount].reg;// reken maar na klopt...alleen bit0 van .reg = verschillend
+				if (bfr[i].adres == bfr[Bcount].adres && r == 1) {
+					puls = bfr[Bcount].tijd - bfr[i].tijd;
+					dp.print(F(" <>")); dp.print(puls); dp.println(F("ms"));
+					bfr[i].reg &= ~(1 << 7);//buffer vrijgeven
+					i = Bsize; //exit lus
+				}
+			}
+		}
+		else { //Beide verwerken aan en uit
+			if (bfr[Bcount].reg & (1 << 0)) {
+				dp.println("+");
+			}
+			else {
+				dp.println("-");
+			}
+		}
+		bfr[Bcount].reg &= ~(1 << 7); // buffer vrijgeven
+	}
+	return false;
+}
+
+
+bool IO_dpold() {
 	//als buffer (bcount) een te tonen msg heeft, deze tonen en read laag zetten. 
 	//Als deze buffer niet getoond hoeft te worden, blijft read hoog en start IO_exe() de volgende Bcount.
 
 	bool read = true;
-	
+
 	if (MEM_reg & (1 << 0)) { //Alleen uit tonen
 
 		if (bfr[Bcount].reg & (1 << 7) && ~bfr[Bcount].reg & (1 << 0)) {
@@ -379,7 +407,6 @@ bool IO_dp() {
 			for (byte i = 0; i < Bsize; i++) {
 				//volgorde belangrijk
 				r = bfr[i].reg ^ bfr[Bcount].reg;// reken maar na klopt...DUS NIET...OPLOSSEN komt door checkbuffer()
-				//Serial.println(r);
 				if (bfr[i].adres == bfr[Bcount].adres && r == 1) {
 					puls = bfr[Bcount].tijd - bfr[i].tijd;
 					Serial.print(" <>"); Serial.print(puls); Serial.println(F("ms."));
@@ -391,7 +418,7 @@ bool IO_dp() {
 			read = false;
 		}
 	}
-	
+
 	else { //Aan en uit tonen
 		if (bfr[Bcount].reg & (1 << 7)) {
 			Serial.print(F("A-")); Serial.print(bfr[Bcount].adres);
