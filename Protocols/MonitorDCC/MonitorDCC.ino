@@ -65,10 +65,14 @@ byte SW_scroll = B0011; //masker welke knoppen kunnen scrollen 1=wel 0=niet
 byte uniek = 0xFF;
 //tijdelijke varabelen
 byte teller; //gebruikt in display test
+byte temp;
 //setup functions
+
+
+
 void MEM_read() {
 	//factory eerst maken....
-	MEM_reg = B11111111;//EEPROM.read(10);
+	MEM_reg = 0xFF;//EEPROM.read(10);
 	//bit0=Voor artikelen, true, alleen uit tonen met pulsduur, false aan en uit msg tonen 
 }
 void setup() {
@@ -85,8 +89,12 @@ void setup() {
 	DDRC &= ~B00001111;
 	PORTC |= B00001111;
 	DDRD |= (1 << 3); DDRD |= (1 << 4); //groene en rode  leds
-
-
+	DP_welcome(); //toon opening text
+	delay(2000);
+	DP_start();
+	MEM_read();
+}
+void DP_welcome() {
 	//Openings tekst
 	dp.clearDisplay();
 	dp.setTextSize(1);
@@ -101,10 +109,18 @@ void setup() {
 	dp.setCursor(85, 55);
 	dp.print(version);
 	dp.display();
-
-	MEM_read();
 }
+void DP_start() {
+	dp.clearDisplay();
+	dp.drawLine(0, 50, 128, 50, 1);
+	dp.setTextSize(1);
+	dp.setTextColor(WHITE);
+	dp.setCursor(10, 53);
 
+	// Display static text
+	dp.println(F("Hier onderbalk"));
+	dp.display();
+}
 void loop() {
 	//processen
 	Dcc.process();
@@ -165,10 +181,10 @@ void SW_on(byte sw) {
 		break;
 
 	case 2:
-		PIND |= (1 << 3);
+		scrolldown();
 		break;
 	case 3:
-		PIND |= (1 << 4);
+		DP_start();
 		break;
 
 	}
@@ -320,7 +336,15 @@ void IO_exe() {
 	//ervoor zorgen dat alle buffers in volgorde worden gelezen, dus Bcount
 	if (~GPIOR0 & (1 << 0))return; //stoppen als er geen te verwerken msg zijn.
 
-	dp.clearDisplay();
+	//eventueel te maken 
+	if (MEM_reg & (1 << 1)) { //Toon lijst
+		scrolldown();
+	}
+	else { //toon 1 msg
+		dp.clearDisplay();
+	}
+
+	
 	byte count = 0; bool read = true;
 	while (read) { //zolang read =true herhalen, volgorde belangrijk
 		read = IO_dp(); //dp=displays msg 
@@ -338,8 +362,8 @@ bool IO_dp() {
 	
 	//te tonen buffer = Bcount
 	dp.setTextColor(WHITE);
-	dp.setCursor(5, 10);
-	dp.setTextSize(1);
+	dp.setCursor(0, 0);
+	dp.setTextSize(1); //6 pixels breed, 8 pixels hoog 10 pixels is regelhoogte
 
 	if (bfr[Bcount].reg & (1 << 6)) { //Locomotief
 
@@ -383,63 +407,31 @@ bool IO_dp() {
 	return false;
 }
 
-
-bool IO_dpold() {
-	//als buffer (bcount) een te tonen msg heeft, deze tonen en read laag zetten. 
-	//Als deze buffer niet getoond hoeft te worden, blijft read hoog en start IO_exe() de volgende Bcount.
-
-	bool read = true;
-
-	if (MEM_reg & (1 << 0)) { //Alleen uit tonen
-
-		if (bfr[Bcount].reg & (1 << 7) && ~bfr[Bcount].reg & (1 << 0)) {
-			Serial.print(F("Acc ")); Serial.print(bfr[Bcount].adres);
-			if (bfr[Bcount].reg & (1 << 1)) {
-				Serial.print(" R");
+void scrolldown1() {
+	temp++;
+	dp.ssd1306_command(0x40+temp);
+}
+void scrolldown() {
+	//blok van 50 bovenste lijnen 10 (regelhoogte nog uitzoeken) naar beneden plaatsen
+	//regel voor regel onderste regel y=40~y=49 zwart maken
+	//blijft dus 15pixels over nu aan onderkant
+	for (byte y = 40; y < 50; y++) {
+		for (byte x = 0; x < 128; x++) {
+			dp.drawPixel(x, y, BLACK);
+		}
+	}	
+	for (byte y = 39; y < 255; y--) {
+		for (byte x = 0; x < 128; x++) {
+			if (dp.getPixel(x, y)) {
+				dp.drawPixel(x,y, BLACK);
+				dp.drawPixel(x,y + 10, WHITE);
 			}
 			else {
-				Serial.print(" A");
+				dp.drawPixel(x,y + 10, BLACK);
 			}
-
-			//aan msg zoeken
-			byte r = 0;
-			unsigned int puls;
-			for (byte i = 0; i < Bsize; i++) {
-				//volgorde belangrijk
-				r = bfr[i].reg ^ bfr[Bcount].reg;// reken maar na klopt...DUS NIET...OPLOSSEN komt door checkbuffer()
-				if (bfr[i].adres == bfr[Bcount].adres && r == 1) {
-					puls = bfr[Bcount].tijd - bfr[i].tijd;
-					Serial.print(" <>"); Serial.print(puls); Serial.println(F("ms."));
-					bfr[i].reg &= ~(1 << 7);//free on artbuffer
-					bfr[Bcount].reg &= ~(1 << 7); //free off artbuffer
-					i = Bsize; //exit lus
-				}
-			}
-			read = false;
 		}
 	}
-
-	else { //Aan en uit tonen
-		if (bfr[Bcount].reg & (1 << 7)) {
-			Serial.print(F("A-")); Serial.print(bfr[Bcount].adres);
-			if (bfr[Bcount].reg & (1 << 1)) {
-				Serial.print("R");
-			}
-			else {
-				Serial.print(" A");
-			}
-
-			if (bfr[Bcount].reg & (1 << 0)) {
-				Serial.println("+");
-			}
-			else {
-				Serial.println("-");
-			}
-			read = false;
-			bfr[Bcount].reg &= ~(1 << 7); //free this artbuffer
-		}
-	}
-	return read;
+	dp.display();
 }
 
 

@@ -24,8 +24,8 @@ bit7 artikel on/off
 
 
 MEM_reg instellingen die opgeslagen in EEPROM
-bit 0  Toon aan en uit, false toon alleen uit de pulsduur dus NA de uit msg, true (default)
-
+bit0  Toon aan en uit, false toon alleen uit de pulsduur dus NA de uit msg, true (default)
+bit1	True:Toon lijst van 5 msg onder elkaar, of false: 1 grote msg.
 
 
 General purpose register flags
