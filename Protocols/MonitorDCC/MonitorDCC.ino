@@ -169,13 +169,19 @@ void SW_exe() {
 void SW_on(byte sw) {
 	switch (sw) {
 	case 0:
+		//for (byte i = 0; i < Bsize; i++) {
+		//	Serial.print(bfr[i].adres); Serial.print(" ");
+		//	Serial.println(bfr[i].reg);
+		//}
+		//Serial.println("----");
+		drawLoc(1, 1,1); //x y size
+		drawWisselA(1, 10, 1);
+		drawWisselR(1, 20, 1);
 
-		for (byte i = 0; i < Bsize; i++) {
-			Serial.print(bfr[i].adres); Serial.print(" ");
-			Serial.println(bfr[i].reg);
-		}
-		Serial.println("----");
+		dp.display();
 		break;
+
+
 	case 1:
 		IO_exe();
 		break;
@@ -344,7 +350,7 @@ void IO_exe() {
 		dp.clearDisplay();
 	}
 
-	
+
 	byte count = 0; bool read = true;
 	while (read) { //zolang read =true herhalen, volgorde belangrijk
 		read = IO_dp(); //dp=displays msg 
@@ -359,7 +365,7 @@ void IO_exe() {
 bool IO_dp() {
 	bool read = true;
 	if (~bfr[Bcount].reg & (1 << 7))return true;
-	
+
 	//te tonen buffer = Bcount
 	dp.setTextColor(WHITE);
 	dp.setCursor(0, 0);
@@ -409,7 +415,7 @@ bool IO_dp() {
 
 void scrolldown1() {
 	temp++;
-	dp.ssd1306_command(0x40+temp);
+	dp.ssd1306_command(0x40 + temp);
 }
 void scrolldown() {
 	//blok van 50 bovenste lijnen 10 (regelhoogte nog uitzoeken) naar beneden plaatsen
@@ -419,19 +425,58 @@ void scrolldown() {
 		for (byte x = 0; x < 128; x++) {
 			dp.drawPixel(x, y, BLACK);
 		}
-	}	
+	}
 	for (byte y = 39; y < 255; y--) {
 		for (byte x = 0; x < 128; x++) {
 			if (dp.getPixel(x, y)) {
-				dp.drawPixel(x,y, BLACK);
-				dp.drawPixel(x,y + 10, WHITE);
+				dp.drawPixel(x, y, BLACK);
+				dp.drawPixel(x, y + 10, WHITE);
 			}
 			else {
-				dp.drawPixel(x,y + 10, BLACK);
+				dp.drawPixel(x, y + 10, BLACK);
 			}
 		}
 	}
 	dp.display();
+}
+void drawLoc(byte x, byte y, byte s) {
+	//tekend loc icon
+	dp.fillRect(s*(x + 1), s*y, s * 5, s * 1, 1);//dak
+	dp.fillRect(s*(x + 4), s*(y + 2), s * 8, s * 3, 1); //ketel
+	dp.fillRect(s*(x + 10), s*y, s * 1, s * 2, 1); //schoorsteen
+	dp.fillRect(s*(x + 5), s*(y + 1), s * 1, s * 1, 1); //raam
+	dp.fillRect(s*x, s*(y + 3), s * 2, s * 1, 1); //bok
+	dp.fillRect(s*x, s*(y + 4), s * 4, s * 1, 1); //vloer
+	dp.fillRect(s*(x+1), s*(y + 5), s * 5, s * 1, 1); //onderstel
+	dp.fillRect(s*(x + 7), s*(y + 5), s * 5, s * 1, 1); //onderstel voor
+	dp.fillRect(s*(x + 2), s*(y + 6), s * 3, s * 1, 1); //wiel
+	dp.fillRect(s*(x + 8), s*(y + 6), s * 3, s * 1, 1); //wiel voor
+}
+void drawWisselR(byte x,byte y, byte s) {
+	//tekend wissel icon rechtdoor
+	dp.fillRect(s*(x + 7), s*y, s * 5, s * 1, 1);//rg0
+	dp.fillRect(s*(x + 5), s*(y+1), s * 3, s * 1, 1);//rg1
+	dp.fillRect(s*(x + 11), s*(y+1), s * 1, s * 1, 1);//rg1
+	dp.fillRect(s*(x + 2), s*(y+2), s * 4, s * 1, 1);//rg2
+	dp.fillRect(s*(x + 9), s*(y + 2), s * 3, s * 1, 1);//rg2
+	dp.fillRect(s*(x + 1), s*(y + 3), s * 2, s * 1, 1);//rg3
+	dp.fillRect(s*(x + 7), s*(y + 3), s * 3, s * 1, 1);//rg3
+	dp.fillRect(s*x, s*(y + 4), s * 2, s * 1, 1);//rg4
+	dp.fillRect(s*(x + 5), s*(y + 4), s * 3, s * 1, 1);//rg4
+	dp.fillRect(s*x, s*(y + 5), s * 11, s * 1, 1);//rg5
+	dp.fillRect(s*x ,s*(y + 6), s * 11, s * 1, 1);//rg6
+	dp.fillRect(s*x, s*(y + 7), s * 11, s * 1, 1);//rg7
+}
+void drawWisselA(byte x, byte y, byte s) {
+	dp.fillRect(s*(x + 7), s*y, s * 6, s * 1, 1);//rg0
+	dp.fillRect(s*(x + 5), s*(y + 1), s * 6, s * 1, 1);//rg1
+	dp.fillRect(s*(x + 3), s*(y + 2), s * 6 , s * 1, 1);//rg2
+	dp.fillRect(s*(x + 1), s*(y + 3), s * 6, s * 1, 1);//rg3
+	dp.fillRect(s*x, s*(y + 4), s * 6, s * 1, 1);//rg4
+	dp.fillRect(s*x, s*(y + 5), s * 12, s * 1, 1);//rg5
+	dp.fillRect(s*x, s*(y + 6), s * 1, s * 1, 1);//rg6
+	dp.fillRect(s*(x+11), s*(y + 6), s * 1, s * 1, 1);//rg6
+	dp.fillRect(s*x, s*(y + 7), s * 12, s * 1, 1);//rg7
 }
 
 
