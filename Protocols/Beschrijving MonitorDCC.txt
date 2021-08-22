@@ -10,14 +10,7 @@ pin4 rode led, buffer vol
 
 
 bfr[].reg (register van een msg buffer)
-bit0 actief, bevat nieuw msg
-bit1 false=artikel true=loc
-bit2 true msg is CV
-bit3
-bit4
-bit5
-bit6 artikel poort R<>A
-bit7 artikel on/off
+zie struct buffers{}
 
 
 
@@ -26,6 +19,7 @@ bit7 artikel on/off
 MEM_reg instellingen die opgeslagen in EEPROM
 bit0  Toon aan en uit, false toon alleen uit de pulsduur dus NA de uit msg, true (default)
 bit1	True:Toon lijst van 5 msg onder elkaar, of false: 1 grote msg.
+bit2	True: Toon output as converter AAAACDDP A=adres C=on/off DD=channel 0~3 P=poort R of A
 
 
 General purpose register flags
@@ -38,3 +32,5 @@ bit4
 bit5
 bit6
 bit7
+
+GPIOR2 gpio flags lokaal, dus binnen 1 functie alleen gebruiken
