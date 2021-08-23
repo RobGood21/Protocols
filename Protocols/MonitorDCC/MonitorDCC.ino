@@ -70,6 +70,7 @@ void MEM_read() {
 	//factory eerst maken....
 	MEM_reg = B11111100;//EEPROM.read(10);
 	//bit0=Voor artikelen, true, alleen uit tonen met pulsduur, false aan en uit msg tonen 
+	//bit1=singel false
 }
 void setup() {
 
@@ -123,7 +124,8 @@ void loop() {
 	Dcc.process();
 	//slow events
 	if (millis() - slowtimer > 30) {
-		checkBuffer(); //check status buffer
+		//checkBuffer(); //check status buffer
+		PORTD &= ~(3 << 3);
 		slowtimer = millis();
 		SW_exe();
 	}
@@ -166,12 +168,15 @@ void SW_exe() {
 void SW_on(byte sw) {
 	switch (sw) {
 	case 0:
+		/*
 		for (byte i = 0; i < Bsize; i++) {
 			Serial.print(bfr[i].adres); Serial.print(" ");
 			Serial.println(bfr[i].reg);
 		}
 		Serial.println("----");
 		dp.display();
+		*/
+
 		break;
 	case 1:
 		IO_exe();
@@ -215,17 +220,23 @@ void SW_off(byte sw) {
 }
 
 //terugmeldingen (callback) uit libraries (NmraDCC)
+
+
 void notifyDccMsg(DCC_MSG * Msg) {
+
+	checkBuffer();
+
 	//msg worden vaak meerdere malen uitgezonden, dubbele eruit filteren
+	if (GPIOR0 & (1 << 1))return; //Stop als buffer vol is
 	bool nieuw = true;
 	for (byte i = 0; i < MAX_DCC_MESSAGE_LEN; i++) {
 		if (lastmsg[i] != Msg->Data[i]) nieuw = false;
 	}
 
 	if (nieuw)return;
+	//Serial.println(Msg->Data[0], BIN);
 	//local variables
 	byte db;  byte bte;  int adr = 0; byte reg = 0;
-
 
 	//Filters
 	db = Msg->Data[0];
@@ -243,12 +254,6 @@ void notifyDccMsg(DCC_MSG * Msg) {
 		if (~bte & (1 << 4))adr += 64;
 
 		//CV of bediening van artikel
-
-
-
-			//dubbele na elkaar gestuurde boodschappen uitfilteren.
-			//if (lastmsg[0] != Msg->Data[0] || lastmsg[1] != Msg->Data[1]) {
-				//dcc adres bepalen
 		adr = adr * 4;
 		if (~bte &(1 << 2))adr -= 2;
 		if (~bte & (1 << 1))adr -= 1;
@@ -288,13 +293,21 @@ void checkBuffer() {
 			GPIOR0 |= (1 << 0); //buffer niet leeg(groen)
 		}
 		else {
-			GPIOR0 &= ~(1 << 1); //Buffer niet vol (rood)
+			GPIOR0 &= ~(1 << 1);
 		}
 	}
 
-	PORTD &= ~(3 << 3); //clear leds
+
+
+	//PORTD &= ~(3 << 3); //clear leds, periodiek in loop()
 	//PORTD &= ~(1 << 4);
-	if (GPIOR0 & (1 << 0))PIND |= (1 << 3);
+	if (GPIOR0 & (1 << 0)) {
+		PIND |= (1 << 3);
+	}
+	else {
+		Bcount = 0;
+	}
+
 	if (GPIOR0 & (1 << 1))PIND |= (1 << 4);
 }
 
@@ -304,25 +317,43 @@ void ART_write(int adr, byte reg) { //called from 'notifyDccMsg()'
 	//als mem_reg bit0 true is de aan en de uit msg beide opslaan en verwerken.
 	//Tijd opslaan in millis() , verschil geeft pulsduur getoont in de Off msg 
 	//bij memreg bit0 false, alleen de On msg verwerken, opslaan en tonen, simpeler dus
-
 	//kijken of msg nieuw is.	
-	bool nieuw = true; reg |= (1 << 7);
+	byte Treg = reg;
+
+	bool nieuw = true; Treg |= (1 << 7);
 	for (byte i = 0; i < Bsize; i++) {
 		//zoeken naar door artikel bezette buffer
-		if (bfr[i].adres == adr && bfr[i].reg == reg) {
+		if (bfr[i].adres == adr && bfr[i].reg == Treg) {
 			nieuw = false;
-			Serial.print("*");
+			//Serial.print("*");
 		}
 	}
 
+
+/*
+	//Als er een 'aan' msg komt voor een artikel, zoeken of er nog een uit te voeren 'uit' msg is,
+		//dan geen nieuw buffer aanmaken. kijken of dit sneller kan...?
+
+	Treg &= ~(1 << 0); //zoeken naar actieve 'uit'msg
+	//if (reg & (1 << 0)) { //dus een 'aan'msg
+	for (byte i = 0; i < Bsize; i++) {
+		if (bfr[i].adres == adr && bfr[i].reg == Treg) { //dus een actieve msg
+			if(bfr[i].reg ^Treg==1)	nieuw = false;
+		}
+	}
+
+	//}
+*/
+
+
 	if (nieuw) {
-		//Serial.println("new");
+		Serial.println("new");
 		for (byte i = 0; i < Bsize; i++) {
 			if (~bfr[i].reg & (1 << 7)) { //vrij gevonden	
 				bfr[i].adres = adr;
 				bfr[i].reg = reg;
 				bfr[i].tijd = millis();
-				//Serial.println(i);
+				bfr[i].reg |= (1 << 7); //set buffer active
 				i = Bsize; //uitspringen
 			}
 		}
@@ -331,38 +362,30 @@ void ART_write(int adr, byte reg) { //called from 'notifyDccMsg()'
 
 //IO alles met de uitvoer van de ontvangen msg. periodiek of manual
 void IO_exe() {
-	bool read = true;
+	bool read = true; byte count = 0;
 	//ervoor zorgen dat alle buffers in volgorde worden gelezen, dus Bcount
 	if (~GPIOR0 & (1 << 0))return; //stoppen als er geen te verwerken msg zijn.
-
-	if (MEM_reg & (1 << 1)) { //Toon lijst
-		scrolldown();
-	}
-	else { //toon 1 msg
-		DP_start();
-	}
-
 	while (read) {
+		Serial.print("|");
 		//zolang read =true herhalen, volgorde belangrijk
 		//deze constructie omdat er meerdere redenen zijn waarom
 		//deze buffer niet kan worden getoond. 
 		read = IO_dp(); //dp=displays msg 
 		Bcount++;
 		if (Bcount == Bsize)Bcount = 0;
+
+		count++;
+		if (count > Bsize)read = false; //exit als buffer blijft hangen. Misschien een autodelete er op los laten?
 	}
 	dp.display();
 }
 
-
-bool IO_dp() {
-
-	//IO_dp (display) zet het actieve msg in het display single(S) of list(L)
+bool IO_dp() { //displays msg
 	bool read = true;
-	if (~bfr[Bcount].reg & (1 << 7))return true;
-	
-	Serial.print("Bcount "); Serial.println(Bcount);
-	//te tonen buffer = Bcount
+	if (~bfr[Bcount].reg & (1 << 7))return true; //exit als niet vrij (alleen bij artikelen maken)
+	GPIOR2 = 0; //clear gpr, flags in functie
 	dp.setTextColor(WHITE);
+
 	//******Locomotief
 	if (bfr[Bcount].reg & (1 << 6)) { //Locomotief
 
@@ -372,15 +395,36 @@ bool IO_dp() {
 		if (MEM_reg & (1 << 0)) { //alleen de 'uit' tonen voor leesbaarheid
 			if (bfr[Bcount].reg & (1 << 0)) return true; //alleen 'uit' msg verwerken
 		}
-		GPIOR2 = 0x00; //clear gpr, flags in functie
+		else { //aan en uit tonen
+			if (~bfr[Bcount].reg & (1 << 0)) { //uit msg			
 
-//Algemeen waardes bepalen
-		unsigned int puls; byte r; byte d;
+
+				/*
+				//zoeken of er nog een 'aan' msg actief is, zoja deze buffer overslaan
+				//hopelijk oplossing voor het probleem dat 'aan' msg blijven hangen en in de buffer blijven
+				//Nog steeds niet helemaal goed...wel beter  ff verder gaan kijken of verderop een oplossing komt
+
+				byte count = 0;
+				GPIOR2 = bfr[Bcount].reg;
+				GPIOR2 |= (1 << 0); //set reg naar 'aan'
+				for (byte i = 0; i < Bsize; i++) {
+					if (bfr[i].adres == bfr[Bcount].adres && bfr[i].reg == GPIOR2) {
+						count++;
+						if (count > 1) bfr[i].reg &= ~(1 << 7); //set buffer free, meer dan 1 'aan' msg
+					}
+					if (count > 0)	return true;
+				}
+				*/
+			}
+		}
+		//Algemeen waardes bepalen
+		GPIOR2 = 0; //reset gpr
+		unsigned int puls = 0; byte r = 0; byte d = 0;
 
 		if (MEM_reg & (1 << 0)) { //alleen uit msg verwerken, dus de aan weghalen en tijd uitrekenen			
 			for (byte i = 0; i < Bsize; i++) {
 				//volgorde belangrijk
-				r = bfr[i].reg ^ bfr[Bcount].reg;// reken maar na klopt...alleen bit0 van .reg = verschillend
+				r = bfr[i].reg ^ bfr[Bcount].reg;// reken maar na klopt...alleen bit0 van .reg = verschillend				
 				if (bfr[i].adres == bfr[Bcount].adres && r == 1) {
 					puls = bfr[Bcount].tijd - bfr[i].tijd;
 					bfr[i].reg &= ~(1 << 7);//buffer vrijgeven
@@ -388,11 +432,11 @@ bool IO_dp() {
 				}
 			}
 		}
-		//else { //Beide verwerken aan en uit
-		if (bfr[Bcount].reg & (1 << 0)) GPIOR2 |= (1 << 0); //zet flag POWEROUT=on			
-	//}
+		else {
+			if (bfr[Bcount].reg & (1 << 0)) GPIOR2 |= (1 << 0); //zet flag POWEROUT=on		
+		}
 
-	//type msg bepalen
+		//type msg bepalen
 		if (bfr[Bcount].reg & (1 << 2)) { //CV msg
 			d = 0;
 		}
@@ -404,7 +448,8 @@ bool IO_dp() {
 		}
 
 		// Display
-		if (MEM_reg & (1 << 1)) { //toon lijst zie mem read om in te stellen tijdelijk 
+		if (MEM_reg & (1 << 1)) { //toon lijst
+			scrolldown();
 			dp.setCursor(0, 0);
 			dp.setTextSize(1); //6 pixels breed, 8 pixels hoog 10 pixels is regelhoogte
 			drawWissel(0, 0, 1, d);
@@ -423,12 +468,13 @@ bool IO_dp() {
 						dp.println(aan);
 					}
 					else {
-						dp.println(uit);		
+						dp.println(uit);
 					}
 				}
 			}
 		}
 		else { //toon enkel
+			DP_start(); //clears bovendeel display
 			drawWissel(3, 0, 2, d);
 			dp.setCursor(42, 0);
 			dp.setTextSize(2);
@@ -440,7 +486,6 @@ bool IO_dp() {
 					drawPuls(13, 18, 2); //x-y-size
 					dp.print(puls); dp.println(F("ms"));
 				}
-
 				else { //aan en uit tonen
 					if (GPIOR2 & (1 << 0)) {
 						dp.println(aan);
@@ -449,6 +494,13 @@ bool IO_dp() {
 						dp.println(uit);
 					}
 				}
+				//byte weergeven
+				byte x;
+				for (byte i = 0; i < 8; i++) {
+					x = 15 * i;
+					if (i > 3)x += 4;
+					dp.drawRect(x, 38, 12, 12, 1);
+				}
 			}
 		}
 
@@ -456,11 +508,6 @@ bool IO_dp() {
 
 	}
 	return false;
-}
-
-void scrolldown1() {
-	temp++;
-	dp.ssd1306_command(0x40 + temp);
 }
 
 void scrolldown() {
