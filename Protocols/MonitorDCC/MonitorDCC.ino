@@ -24,11 +24,26 @@ char version[] = "V 1.01"; //Openingstekst versie aanduiding
 
 //constanten
 #define Bsize 8 //hoe groot is de artikel buffer?
+#define Psize 4 //aantal presets
 #define aan "aan"
 #define uit "uit"
 //constructers
 Adafruit_SSD1306 dp(128, 64, &Wire); // , -1);
 NmraDcc  Dcc;
+struct presets {
+	byte filter; //welke msg verwerken, true is verwerken, false is overslaan
+	//bit0 //loc
+	//bit1 //speed, direction 'R''
+	//bit2 //functions 'F'
+	//bit3 //CV  'CV'
+	//bit4 //artikel 
+	//bit5 //switching '<>'
+	//bit6 //CV 'CV'
+	//bit7
+};
+presets preset[Psize];
+
+byte Prst; //huidig actief preset
 
 struct buffers {
 	byte reg;//
@@ -67,6 +82,8 @@ byte temp;
 
 
 void MEM_read() {
+	Prst = EEPROM.read(110);
+	if (Prst > Psize)Prst = 0;
 	//factory eerst maken....
 	MEM_reg = B11111100;//EEPROM.read(10);
 	//bit0=Voor artikelen, true, alleen uit tonen met pulsduur, false aan en uit msg tonen 
@@ -86,12 +103,31 @@ void setup() {
 	DDRC &= ~B00001111;
 	PORTC |= B00001111;
 	DDRD |= (1 << 3); DDRD |= (1 << 4); //groene en rode  leds
+
+	//reset, factory knop 0+3
+	delay(10);
+	if (~PINC & (1<<0) && ~PINC & (1<<3))factory();
+
+
 	DP_welcome(); //toon opening text
 	delay(500);
-	DP_start();
+	DP_mon();
 	MEM_read();
 	//xtra init
 	GPIOR2 = 0;
+}
+
+void factory() {
+	for (int i = 0; i < EEPROM.length(); i++) {
+		EEPROM.update(i, 0xFF);
+	}
+	dp.clearDisplay();
+	dp.setCursor(10, 20);
+	dp.setTextSize(2);
+	dp.setTextColor(1);
+	dp.print(F("Factory"));
+	dp.display();
+	delay(1000);
 }
 void DP_welcome() {
 	//Openings tekst
@@ -109,7 +145,7 @@ void DP_welcome() {
 	dp.print(version);
 	dp.display();
 }
-void DP_start() {
+void DP_mon() {
 	dp.clearDisplay();
 	dp.drawLine(0, 54, 128, 54, 1);
 	dp.setTextSize(1);
@@ -166,20 +202,24 @@ void SW_exe() {
 	SW_status = read;
 }
 void SW_on(byte sw) {
+	bool p;
 	switch (sw) {
-	case 0:
-		/*
-		for (byte i = 0; i < Bsize; i++) {
-			Serial.print(bfr[i].adres); Serial.print(" ");
-			Serial.println(bfr[i].reg);
+	case 0: //schakelen tussen monitor en programmeren
+		GPIOR0 ^= (1 << 2);
+		p = (GPIOR0 & (1 << 2));
+		if (p) { //programeer tonen
+			DP_prg();
 		}
-		Serial.println("----");
-		dp.display();
-		*/
-
+		else { //monitor tonen
+			DP_mon();
+		}
 		break;
 	case 1:
-		IO_exe();
+		if (p) {
+		} else{
+	IO_exe();
+		}
+	
 		break;
 
 	case 2:
@@ -188,23 +228,10 @@ void SW_on(byte sw) {
 		//scrolldown();
 		break;
 	case 3:
-		DP_start();
+		DP_mon();
 		break;
 
 	}
-	/*
-	//test schakelaars
-	teller++;
-	dp.clearDisplay();
-	dp.setTextColor(WHITE);
-	dp.setCursor(10, 30);
-	dp.setTextSize(2);
-	dp.print("On "); dp.print(sw);
-	dp.setCursor(85, 50);
-	dp.setTextSize(1);
-	dp.print(teller);
-	dp.display();
-*/
 }
 void SW_off(byte sw) {
 	SW_holdcounter[sw] = 0; //reset counter for scroll function 
@@ -219,13 +246,31 @@ void SW_off(byte sw) {
 */
 }
 
+void DP_prg() { //iedere keer geheel vernieuwen?
+	//toont programmeer blad (6 regels?)
+	dp.clearDisplay();
+	dp.setTextSize(1); dp.setTextColor(1);
+	//regel 1
+	dp.setCursor(0, 0);	
+	dp.print("Preset: ");
+
+	//regel 2
+	drawLoc(0, 12, 1);
+
+	//regel 3
+	drawWissel(0, 22, 1, 0);
+
+	//regel 4
+
+	//regel 5
+
+
+
+	dp.display();
+}
 //terugmeldingen (callback) uit libraries (NmraDCC)
-
-
 void notifyDccMsg(DCC_MSG * Msg) {
-
 	checkBuffer();
-
 	//msg worden vaak meerdere malen uitgezonden, dubbele eruit filteren
 	if (GPIOR0 & (1 << 1))return; //Stop als buffer vol is
 	bool nieuw = true;
@@ -347,7 +392,7 @@ void ART_write(int adr, byte reg) { //called from 'notifyDccMsg()'
 
 
 	if (nieuw) {
-		Serial.println("new");
+		//Serial.println("new");
 		for (byte i = 0; i < Bsize; i++) {
 			if (~bfr[i].reg & (1 << 7)) { //vrij gevonden	
 				bfr[i].adres = adr;
@@ -366,7 +411,7 @@ void IO_exe() {
 	//ervoor zorgen dat alle buffers in volgorde worden gelezen, dus Bcount
 	if (~GPIOR0 & (1 << 0))return; //stoppen als er geen te verwerken msg zijn.
 	while (read) {
-		Serial.print("|");
+		//Serial.print("|");
 		//zolang read =true herhalen, volgorde belangrijk
 		//deze constructie omdat er meerdere redenen zijn waarom
 		//deze buffer niet kan worden getoond. 
@@ -474,7 +519,7 @@ bool IO_dp() { //displays msg
 			}
 		}
 		else { //toon enkel
-			DP_start(); //clears bovendeel display
+			DP_mon(); //clears bovendeel display
 			drawWissel(3, 0, 2, d);
 			dp.setCursor(42, 0);
 			dp.setTextSize(2);
