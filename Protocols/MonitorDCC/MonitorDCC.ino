@@ -37,9 +37,9 @@ Adafruit_SSD1306 dp(128, 64, &Wire); // , -1);
 NmraDcc  Dcc;
 struct presets {
 	byte reg;
-	//bit0  Toon aan en uit, false toon alleen uit de pulsduur dus NA de uit msg, true (default)
+	//bit0 True: Toon aan en uit msg, false: toon alleen uit met pulsduur
 	//bit1	True : Toon lijst van 5 msg onder elkaar, of false : 1 grote msg.
-	//bit2	True : Toon output as converter AAAACDDP A = adres C = on / off DD = channel 0~3 P = poort R of A
+	//bit2	
 	byte filter; //welke msg verwerken, true is verwerken, false is overslaan
 	//bit0 //loc
 	//bit1 //speed, direction 'R''
@@ -244,7 +244,7 @@ void SW_on(byte sw) {
 			DP_prg();
 		}
 		else {
-			
+
 		}
 
 		break;
@@ -265,7 +265,7 @@ void SW_on(byte sw) {
 		}
 		else {
 			IO_exe();
-			
+
 		}
 
 		break;
@@ -287,15 +287,16 @@ void SW_off(byte sw) {
 
 void DP_prg() { //iedere keer geheel vernieuwen?
 	//toont programmeer blad (6 regels?)
+	byte px; byte py; byte w; byte h;
 	byte y = 0; //regel afstand verticaal
-	byte x[4] = { 0,26,45,63 };
+	byte x[4] = { 0,26,45,68 };
 	dp.clearDisplay();
 	dp.setTextSize(1); dp.setTextColor(1);
 	//regel 1
 	dp.setCursor(0, y);
 	dp.print(F("Preset:")); dp.print(Prst + 1);
-	if (prgfase == 0)dp.drawLine(x[0], y + 8, x[0] + 47, y + 8, 1); //print cursor
 
+	if (prgfase == 0) { px = x[0]; py = y + 8; w = x[0] + 47, h = y + 8; }//Cursor preset
 	dp.setCursor(x[3], y);
 	if (preset[Prst].reg & (1 << 1)) { //lijst
 		dp.print(F("Lijst"));
@@ -303,34 +304,42 @@ void DP_prg() { //iedere keer geheel vernieuwen?
 	else { //enkel
 		dp.print(F("Apart"));
 	}
-	if (prgfase == 1)dp.drawLine(x[3], y + 8, x[3] + 27, y + 8, 1); //print cursor
+	if (prgfase == 1) { px = x[3]; py = y + 8; w = x[3] + 27; h = y + 8; }//cursor lijst/apart
 
 	//regel 2 
 	y = 12;
 	drawCheck(x[0], y, preset[Prst].filter & (1 << 0)); //check toon locs
 	drawLoc(x[0] + 8, y, 1);
-	if (prgfase == 2)dp.drawLine(x[0], y + 8, x[0] + 22, y + 8, 1); //print cursor
+
+	if (prgfase == 2) { px = x[0]; py = y + 8; w = x[0] + 20; h = y + 8; }//cursor loc
 
 	if (preset[Prst].filter & (1 << 0)) { //alleen als loc check is true
 		drawCheck(x[1], y, preset[Prst].filter & (1 << 1));
 		dp.setCursor(x[1] + 8, y); dp.print(F("R")); //rijden msg
+		if (prgfase == 3) { px = x[1]; py = y + 8; w = x[1] + 10; h = y + 8; } //cursor loc R
 		drawCheck(x[2], y, preset[Prst].filter & (1 << 2));
 		dp.setCursor(x[2] + 8, y); dp.print(F("F")); //functies van de loc
+		if (prgfase == 4) { px = x[2]; py = y + 8; w = x[2] + 10; h = y + 8; } //cursor Loc F
 		drawCheck(x[3], y, preset[Prst].filter & (1 << 3));
 		dp.setCursor(x[3] + 8, y); dp.print(F("CV")); //CV voor de loc
+		if (prgfase == 5) { px = x[3]; py = y + 8; w = x[3] + 16; h = y + 8; } //cursor Loc CV
 	}
 	//regel 3
 	y = 22;
 	drawCheck(x[0], y, preset[Prst].filter & (1 << 4)); //check toon artikelen
-	drawWissel(x[0] + 8, y, 1,0);
+	drawWissel(x[0] + 8, y, 1, 0);
+	if (prgfase == 6) { px = x[0]; py = y + 8; w = x[0] + 20; h = y + 8; } //cursor Artikelen
 
 	if (preset[Prst].filter & (1 << 4)) { //alleen als artikel check is true
 		drawCheck(x[1], y, preset[Prst].filter & (1 << 5));
 		dp.setCursor(x[1] + 8, y); dp.print(F("S")); //Switch msg
+		if (prgfase == 7) { px = x[1]; py = y + 8; w = x[1] + 10; h = y + 8; } //cursor Artikelen switch
 		drawCheck(x[2], y, preset[Prst].filter & (1 << 6));
 		dp.setCursor(x[2] + 8, y); dp.print(F("CV")); //CV
-		//drawCheck(x[3], y, preset[Prst].filter & (1 << 7));
-		//dp.setCursor(x[3] + 8, y); dp.print(F("CV")); //CV voor de loc
+		if (prgfase == 8) { px = x[2]; py = y + 8; w = x[2] + 16; h = y + 8; } //cursor Artikelen CV
+		drawCheck(x[3], y, preset[Prst].reg & (1 << 0));//drawPuls(x[3] + 8, y, 1);
+		dp.setCursor(x[3]+8, y);dp.print(F("puls")); //puls of aan/uit		
+		if (prgfase == 9) { px = x[3]; py = y + 8; w = x[3] + 28; h = y + 8; } //cursor Artikelen CV
 	}
 
 
@@ -343,15 +352,13 @@ void DP_prg() { //iedere keer geheel vernieuwen?
 	//regel 4
 
 	//regel 5
-
-
-
+	dp.drawLine(px, py, w, h, 1);
 	dp.display();
 }
 void ParaUp() {
 	switch (prgfase) {
 	case 0:
-		if(Prst<Psize-1)Prst++; //Psize starts at 1; array at 0
+		if (Prst < Psize - 1)Prst++; //Psize starts at 1; array at 0
 		break;
 	case 1:
 
@@ -389,30 +396,37 @@ void ParaUp() {
 
 }
 void ParaDown() {
-	
+
 	switch (prgfase) {
 	case 0:
 		if (Prst > 0)Prst--;
 		break;
 	case 1:
-	preset[Prst].reg ^= (1 << 1);//flip  preset[Prst].reg bit1 lijst of apart
+		preset[Prst].reg ^= (1 << 1);//flip  preset[Prst].reg bit1 lijst of apart
 		break;
 	case 2:
-		preset[Prst].filter ^=(1 << 0);//tonen loc msg
+		preset[Prst].filter ^= (1 << 0);//tonen loc msg
 		break;
 	case 3:
+		preset[Prst].filter ^= (1 << 1); //Tonen loc rijden
 		break;
 	case 4:
+		preset[Prst].filter ^= (1 << 2); //Tonen loc functions
 		break;
 	case 5:
+		preset[Prst].filter ^= (1 << 3); //Tonen loc CV
 		break;
 	case 6:
+		preset[Prst].filter ^= (1 << 4); //Tonen Acc
 		break;
 	case 7:
+		preset[Prst].filter ^= (1 << 5); //Tonen Acc switch
 		break;
 	case 8:
+		preset[Prst].filter ^= (1 << 6); //Tonen Acc CV
 		break;
 	case 9:
+		preset[Prst].reg ^= (1 << 0); //tonen puls of aan uit msg
 		break;
 	case 10:
 		break;
