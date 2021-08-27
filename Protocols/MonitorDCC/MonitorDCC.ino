@@ -71,6 +71,7 @@ struct buffers {
 }; buffers bfr[Bsize]; //aantal buffer artikelen
 
 //variabelen
+byte data[6]; //bevat laatste ontvangen data uit de decoder
 byte prgfase;
 byte DP_out = 0x00; //output byte
 byte lastmsg[6];
@@ -83,6 +84,9 @@ byte SW_holdcounter[4]; //for scroll functie op buttons
 byte SW_scroll = B0000; //masker welke knoppen kunnen scrollen 1=wel 0=niet
 //tbv decoder NmrraDCC
 byte uniek = 0xFF;
+byte slowcount;
+
+
 //tijdelijke varabelen
 byte teller; //gebruikt in display test
 byte temp;
@@ -182,9 +186,16 @@ void loop() {
 	Dcc.process();
 	//slow events
 	if (millis() - slowtimer > 30) {
-		//checkBuffer(); //check status buffer
-		PORTD &= ~(3 << 3);
 		slowtimer = millis();
+
+		checkBuffer(); //check status buffer
+		slowcount++;
+		if (slowcount > 100) {
+			slowcount = 0;
+			//PORTD &= ~(3 << 3); //set leds off
+		}
+
+
 		SW_exe();
 	}
 }
@@ -338,7 +349,7 @@ void DP_prg() { //iedere keer geheel vernieuwen?
 		dp.setCursor(x[2] + 8, y); dp.print(F("CV")); //CV
 		if (prgfase == 8) { px = x[2]; py = y + 8; w = x[2] + 16; h = y + 8; } //cursor Artikelen CV
 		drawCheck(x[3], y, preset[Prst].reg & (1 << 0));//drawPuls(x[3] + 8, y, 1);
-		dp.setCursor(x[3]+8, y);dp.print(F("puls")); //puls of aan/uit		
+		dp.setCursor(x[3] + 8, y); dp.print(F("puls")); //puls of aan/uit		
 		if (prgfase == 9) { px = x[3]; py = y + 8; w = x[3] + 28; h = y + 8; } //cursor Artikelen CV
 	}
 
@@ -447,8 +458,9 @@ void ParaDown() {
 
 //terugmeldingen (callback) uit libraries (NmraDCC)
 void notifyDccMsg(DCC_MSG * Msg) {
-	checkBuffer();
-	//msg worden vaak meerdere malen uitgezonden, dubbele eruit filteren
+
+	//checkBuffer();
+   //msg worden vaak meerdere malen uitgezonden, dubbele eruit filteren
 	if (GPIOR0 & (1 << 1))return; //Stop als buffer vol is
 	bool nieuw = true;
 	for (byte i = 0; i < MAX_DCC_MESSAGE_LEN; i++) {
@@ -458,13 +470,19 @@ void notifyDccMsg(DCC_MSG * Msg) {
 	if (nieuw)return;
 	//Serial.println(Msg->Data[0], BIN);
 	//local variables
-	byte db;  byte bte;  int adr = 0; byte reg = 0;
 
+	for (byte i; i < 6; i++) {
+		data[i] = Msg->Data[i];
+	}
+
+
+	byte db;  byte bte;  int adr = 0; byte reg = 0;
 	//Filters
 	db = Msg->Data[0];
 	if (db == 0) {	//broadcast voor alle decoder bedoeld
 	}
 	else if (db < 128) {//loc decoder met 7bit adres
+		Loc(true);
 	}
 	else if (db < 192) {//Basic Accessory Decoders with 9 bit addresses and Extended Accessory
 		//decoder adres bepalen
@@ -484,12 +502,13 @@ void notifyDccMsg(DCC_MSG * Msg) {
 		if (Msg->Data[3] > 0)reg |= (1 << 2);  //("CV");
 
 		//bit6 van reg blijft false (artikel)		
-		ART_write(adr, reg); //Zet msg in buffer
+		Acc(adr, reg); // accessoire msg ontvangen
 	//}
 
 	}
 	else if (db < 232) {
-		//Multi-Function Decoders with 14 bit 60 addresses
+		//Multi-Function (loc) Decoders with 14 bit 60 addresses
+		Loc(false);
 	}
 	else if (db < 255) {
 		//Reserved for Future Use
@@ -511,7 +530,6 @@ void checkBuffer() {
 	GPIOR0 |= (1 << 1); //flag buffer full
 	for (byte i = 0; i < Bsize; i++) {
 		if (bfr[i].reg & (1 << 7)) {
-			//ghost boodschappen...(langer dan (instelbaar xtal sec in de buffer) automatisch leegmaken		
 			GPIOR0 |= (1 << 0); //buffer niet leeg(groen)
 		}
 		else {
@@ -519,22 +537,40 @@ void checkBuffer() {
 		}
 	}
 
-
-
-	//PORTD &= ~(3 << 3); //clear leds, periodiek in loop()
+	PORTD &= ~(3 << 3); //clear leds, periodiek in loop()
 	//PORTD &= ~(1 << 4);
 	if (GPIOR0 & (1 << 0)) {
 		PIND |= (1 << 3);
 	}
 	else {
+		//eventueel dit herhalen in de callback anders een volgorde op ingevulde tijd
+		//toevoegen als de volgorde van msg fouten geeft.
 		Bcount = 0;
 	}
 
 	if (GPIOR0 & (1 << 1))PIND |= (1 << 4);
 }
 
+void Loc(bool t) {
+	int adres;
+	if (t) { //7 bits adres
+		adres = data[0];
+	}
+	else { //14 bits adres
+		adres = data[1];
+		if (data[0] & (1 << 0))adres += 256;
+		if(data[0] & (1<<1))adres +=512;
+		if (data[0] & (1 << 2))adres += 1024;
+		if (data[0] & (1 << 3))adres += 2048;
+		if (data[0] & (1 << 4))adres += 4096;
+		if (data[0] & (1 << 5))adres += 8192;
+	}
+	Serial.print("Adres: "); Serial.println(adres);
+	Serial.println(data[0]);
 
-void ART_write(int adr, byte reg) { //called from 'notifyDccMsg()'
+}
+
+void Acc(int adr, byte reg) { //called from 'notifyDccMsg()'
 	//verwerkt nieuw 'basic accessory decoder packet (artikel)
 	//als preset[].reg bit0 true is de aan en de uit msg beide opslaan en verwerken.
 	//Tijd opslaan in millis() , verschil geeft pulsduur getoont in de Off msg 
@@ -569,7 +605,8 @@ void ART_write(int adr, byte reg) { //called from 'notifyDccMsg()'
 
 
 	if (nieuw) {
-		//Serial.println("new");
+		//Serial.println("new"); 
+		//als geen vrije buffer wordt gevonden dan command niet verwerkt
 		for (byte i = 0; i < Bsize; i++) {
 			if (~bfr[i].reg & (1 << 7)) { //vrij gevonden	
 				bfr[i].adres = adr;
