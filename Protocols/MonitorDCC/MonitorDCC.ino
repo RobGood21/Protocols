@@ -26,6 +26,7 @@ char version[] = "V 1.01"; //Openingstekst versie aanduiding
 #define Bsize 8 //hoe groot is de artikel buffer?
 #define Psize 4 //aantal presets
 #define PFsize 15 //aantal programfases
+#define autoDelete 10000 //tijd voor autodelete buffer inhoud 10sec
 
 //verkortingen 
 #define program GPIOR0 & (1<<2) //programmeer modus aan 
@@ -56,25 +57,29 @@ byte Prst; //huidig actief preset
 
 struct buffers {
 	byte reg;//
-	//bit0 artikel true ON, false OFF
-	//bit1 artikel dir true Recht; false afslaan
-	//bit2 msg=CV
-	//bit3 
-	//bit4
-	//bit5
+	//bit0 artikel true: ON; false: off
+	//bit1 artikel true: Recht; false: afslaan
+	//bit2 true: msg=Drive
+	//bit3 true: msg=CV
+	//bit4 True: msg=function1
+	//bit5 True: msg=Function2 
 	//bit6
 	//bit6 true: accesoire; false: loc
-	//bit7 true: bezet; false vrij
+	//bit7 true: bezet; false: vrij
 
-	unsigned int adres;
-	unsigned long tijd;
+	unsigned int adres; //L&A: bevat adres acc en loc
+	unsigned long tijd; //L&A: bevat tijd laatste aanpassing
+	byte instructie; //Loc: bevat waarde instructie byte
+	int CV;
+	byte CVvalue;
 }; buffers bfr[Bsize]; //aantal buffer artikelen
 
 //variabelen
-byte data[6]; //bevat laatste ontvangen data uit de decoder
+
 byte prgfase;
 byte DP_out = 0x00; //output byte
-byte lastmsg[6];
+byte lastmsg[MAX_DCC_MESSAGE_LEN]; //length 6
+byte data[MAX_DCC_MESSAGE_LEN]; //bevat laatste ontvangen data uit de decoder
 byte Bcount; //pointer naar laast verwerkte artikel buffer
 
 unsigned long slowtimer;
@@ -478,7 +483,7 @@ void notifyDccMsg(DCC_MSG * Msg) {
 
 	byte db;  byte bte;  int adr = 0; byte reg = 0;
 	//Filters
-	db = Msg->Data[0];
+	db = data[0];
 	if (db == 0) {	//broadcast voor alle decoder bedoeld
 	}
 	else if (db < 128) {//loc decoder met 7bit adres
@@ -488,7 +493,7 @@ void notifyDccMsg(DCC_MSG * Msg) {
 		//decoder adres bepalen
 		bte = db;
 		bte = bte << 2; adr = bte >> 2; //clear bit7 en 6
-		bte = Msg->Data[1];
+		bte = data[1];
 		if (~bte & (1 << 6))adr += 256;
 		if (~bte & (1 << 5))adr += 128;
 		if (~bte & (1 << 4))adr += 64;
@@ -499,10 +504,12 @@ void notifyDccMsg(DCC_MSG * Msg) {
 		if (~bte & (1 << 1))adr -= 1;
 		if (bte & (1 << 3))reg |= (1 << 0); //onoff
 		if (bte & (1 << 0))reg |= (1 << 1);//false=rechtdoor, true = afslaan
-		if (Msg->Data[3] > 0)reg |= (1 << 2);  //("CV");
+		if (data[3] > 0)reg |= (1 << 2);  //("CV");
+		//accesoire bit6 blijft false
+
 
 		//bit6 van reg blijft false (artikel)		
-		Acc(adr, reg); // accessoire msg ontvangen
+		Write_Acc(adr, reg); // accessoire msg ontvangen
 	//}
 
 	}
@@ -511,14 +518,14 @@ void notifyDccMsg(DCC_MSG * Msg) {
 		Loc(false);
 	}
 	else if (db < 255) {
-		//Reserved for Future Use
+	//Reserved for Future Use
 	}
 	else {
-		//adress=255 idle packett
+	//adress=255 idle packett
 	}
 
 	for (byte i = 0; i < MAX_DCC_MESSAGE_LEN; i++) {
-		lastmsg[i] = Msg->Data[i];//opslaan huidig msg in lastmsg
+		lastmsg[i] = data[i];//opslaan huidig msg in lastmsg
 	}
 }
 
@@ -526,10 +533,12 @@ void notifyDccMsg(DCC_MSG * Msg) {
 //functions
 void checkBuffer() {
 	//check of er te verwerken msg in buffer zitten en of de buffer niet vol is. 
+	//verder check of er loc msg inzitten die al getoond zijn maar laatste aanpassing oud, bv > 3000ms en speed op nul
+
 	GPIOR0 &= ~(1 << 0); //flag msg in buffer
 	GPIOR0 |= (1 << 1); //flag buffer full
 	for (byte i = 0; i < Bsize; i++) {
-		if (bfr[i].reg & (1 << 7)) {
+		if (bfr[i].reg & (1 << 7) || bfr[i].reg & (1 << 6)) { //tonen of actieve loc
 			GPIOR0 |= (1 << 0); //buffer niet leeg(groen)
 		}
 		else {
@@ -552,25 +561,112 @@ void checkBuffer() {
 }
 
 void Loc(bool t) {
-	int adres;
+	if (~preset[Prst].filter & (1 << 0))return; //Filter voor Loc msg
+
+	int adres; byte instr = 0; byte instrByte;
+	/*
+	000 Decoder and Consist Control Instruction
+		001 Advanced Operation Instructions 115
+		010 Speed and Direction Instruction for reverse operation
+		011 Speed and Direction Instruction for forward operation
+		100 Function Group One Instruction
+		101 Function Group Two Instruction
+		111 Configuration Variable Access Instruction
+*/
+
 	if (t) { //7 bits adres
 		adres = data[0];
+		instr = data[1] >> 5;
+		instrByte = 1;
 	}
 	else { //14 bits adres
 		adres = data[1];
 		if (data[0] & (1 << 0))adres += 256;
-		if(data[0] & (1<<1))adres +=512;
+		if (data[0] & (1 << 1))adres += 512;
 		if (data[0] & (1 << 2))adres += 1024;
 		if (data[0] & (1 << 3))adres += 2048;
 		if (data[0] & (1 << 4))adres += 4096;
 		if (data[0] & (1 << 5))adres += 8192;
+		instr = data[2] >> 5;
+		instrByte = 2;
 	}
-	Serial.print("Adres: "); Serial.println(adres);
-	Serial.println(data[0]);
+
+	//Filters en 'bekende' msg weglaten
+
+	if ((instr == 2 || instr == 3) && preset[Prst].filter & (1 << 1)) { //direction and speed
+		LocDrive(adres, instrByte); //instrByte geeft aan welk databyte de instructie bevat
+	}
+	else if (instr == 4) { //function group 1
+
+	}
+	else if (instr == 5) { //Function group 2
+
+	}
+	else if (instr == 7) { //CV
+
+	}
+	else {
+		return;// instructions 000 en 001 en 110 niet doorlaten
+	}
+	//Serial.print("Adres: "); Serial.print(adres);Serial.print("   INstr: "); Serial.println(instr);
+}
+void LocDrive(int adres, byte instrByte) { //called from loc()
+	
+	//Verwerkt direction en speed msg van loco
+	//zoeken of er een buffer voor deze loc dit type msg is. dus adres en byte 1 of 2
+	//Kijken of de instructie byte is veranderd
+	//zoja dan instructie byte vervangen en buffer actief stellen
+
+	byte found = 0;
+	for (byte i = 0; i < Bsize; i++) {
+		if (bfr[i].reg & (1 << 6) && bfr[i].reg & (1<<2) && bfr[i].adres == adres ){
+			//actieve loc drive gevonden
+			//check for change
+			Serial.println("bfr gevonden");
+			if (bfr[i].instructie ^ data[instrByte] == 0) {
+				return; //geen verandering, herhaalde msg
+			}
+			else { //msg veranderd aanpassen
+				bfr[i].instructie = data[instrByte];
+				bfr[i].reg |= (1 << 7); //msg weer tonen
+				return; //verlaat function
+			}
+			found = i;
+		}
+		else { //geen buffer gevonden
+			Serial.println("geen bfr");
+			Write_Loc(adres, data[instrByte]);
+		}
+	}
+	
+	//if (found > 0) Serial.print("Adres: "); Serial.print(adres); Serial.print(" jo "); //Serial.println(instr);
 
 }
+void LocFunction() { //called from loc()
+	//
+}
+void LocCV() { //called from loc()
 
-void Acc(int adr, byte reg) { //called from 'notifyDccMsg()'
+}
+void Write_Loc(int adres, byte instr) { //adres en instructiebyte
+	byte free = 0; //vrije buffer
+	//vrije buffer zoeken, in stappen
+	//Eerst zoeken naar 'oude' loc msg
+	for (byte i = 0; i < Bsize; i++) {
+		if (millis() - bfr[i].tijd > autoDelete) {//Buffer 10 sec niet gebruikt 
+			free = i; //gevonden te gebruiken buffer
+			i = Bsize; //for loop verlaten
+		}
+	}
+	if (free > 0) {
+		//buffer aanmaken...
+
+	}
+	else {
+		//hier nog een fout afhandeling als er geen vrije buffer wordt gevonden.
+	}
+}
+void Write_Acc(int adr, byte reg) { //called from 'notifyDccMsg()'
 	//verwerkt nieuw 'basic accessory decoder packet (artikel)
 	//als preset[].reg bit0 true is de aan en de uit msg beide opslaan en verwerken.
 	//Tijd opslaan in millis() , verschil geeft pulsduur getoont in de Off msg 
@@ -588,27 +684,11 @@ void Acc(int adr, byte reg) { //called from 'notifyDccMsg()'
 	}
 
 
-	/*
-		//Als er een 'aan' msg komt voor een artikel, zoeken of er nog een uit te voeren 'uit' msg is,
-			//dan geen nieuw buffer aanmaken. kijken of dit sneller kan...?
-
-		Treg &= ~(1 << 0); //zoeken naar actieve 'uit'msg
-		//if (reg & (1 << 0)) { //dus een 'aan'msg
-		for (byte i = 0; i < Bsize; i++) {
-			if (bfr[i].adres == adr && bfr[i].reg == Treg) { //dus een actieve msg
-				if(bfr[i].reg ^Treg==1)	nieuw = false;
-			}
-		}
-
-		//}
-	*/
-
-
 	if (nieuw) {
 		//Serial.println("new"); 
 		//als geen vrije buffer wordt gevonden dan command niet verwerkt
 		for (byte i = 0; i < Bsize; i++) {
-			if (~bfr[i].reg & (1 << 7)) { //vrij gevonden	
+			if (~bfr[i].reg & (1 << 7) && ~bfr[i].reg & (1<<6)) { //bit7 false (tonen) bit6 false(actief loc)
 				bfr[i].adres = adr;
 				bfr[i].reg = reg;
 				bfr[i].tijd = millis();
