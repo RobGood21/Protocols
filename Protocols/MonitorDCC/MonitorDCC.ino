@@ -26,7 +26,7 @@ char version[] = "V 1.01"; //Openingstekst versie aanduiding
 #define Bsize 8 //hoe groot is de artikel buffer?
 #define Psize 4 //aantal presets
 #define PFsize 15 //aantal programfases
-#define autoDelete 10000 //tijd voor autodelete buffer inhoud 10sec
+#define autoDelete 50 //tijd voor autodelete buffer inhoud 10sec
 
 //verkortingen 
 #define program GPIOR0 & (1<<2) //programmeer modus aan 
@@ -97,8 +97,6 @@ byte teller; //gebruikt in display test
 byte temp;
 //setup functions
 
-
-
 void MEM_read() {
 	int t;
 	//presets laden
@@ -119,8 +117,6 @@ void MEM_write() {
 	EEPROM.update(200 + (Prst * 20) + 1, preset[Prst].reg);
 
 }
-
-
 void setup() {
 
 	//start processen
@@ -147,7 +143,6 @@ void setup() {
 	//xtra init
 	GPIOR2 = 0;
 }
-
 void factory() {
 	for (int i = 0; i < EEPROM.length(); i++) {
 		EEPROM.update(i, 0xFF);
@@ -300,7 +295,6 @@ void SW_off(byte sw) {
 	dp.display();
 */
 }
-
 void DP_prg() { //iedere keer geheel vernieuwen?
 	//toont programmeer blad (6 regels?)
 	byte px; byte py; byte w; byte h;
@@ -460,13 +454,14 @@ void ParaDown() {
 	}
 
 }
-
 //terugmeldingen (callback) uit libraries (NmraDCC)
 void notifyDccMsg(DCC_MSG * Msg) {
-
 	//checkBuffer();
    //msg worden vaak meerdere malen uitgezonden, dubbele eruit filteren
-	if (GPIOR0 & (1 << 1))return; //Stop als buffer vol is
+
+	//stoppen met volle buffer lijkt me niet goed...
+	//if (GPIOR0 & (1 << 1))return; //Stop als buffer vol is
+
 	bool nieuw = true;
 	for (byte i = 0; i < MAX_DCC_MESSAGE_LEN; i++) {
 		if (lastmsg[i] != Msg->Data[i]) nieuw = false;
@@ -479,8 +474,6 @@ void notifyDccMsg(DCC_MSG * Msg) {
 	for (byte i; i < 6; i++) {
 		data[i] = Msg->Data[i];
 	}
-
-
 	byte db;  byte bte;  int adr = 0; byte reg = 0;
 	//Filters
 	db = data[0];
@@ -505,10 +498,7 @@ void notifyDccMsg(DCC_MSG * Msg) {
 		if (bte & (1 << 3))reg |= (1 << 0); //onoff
 		if (bte & (1 << 0))reg |= (1 << 1);//false=rechtdoor, true = afslaan
 		if (data[3] > 0)reg |= (1 << 2);  //("CV");
-		//accesoire bit6 blijft false
-
-
-		//bit6 van reg blijft false (artikel)		
+		reg |= (1 << 6); //accessoire
 		Write_Acc(adr, reg); // accessoire msg ontvangen
 	//}
 
@@ -518,18 +508,16 @@ void notifyDccMsg(DCC_MSG * Msg) {
 		Loc(false);
 	}
 	else if (db < 255) {
-	//Reserved for Future Use
+		//Reserved for Future Use
 	}
 	else {
-	//adress=255 idle packett
+		//adress=255 idle packett
 	}
 
 	for (byte i = 0; i < MAX_DCC_MESSAGE_LEN; i++) {
 		lastmsg[i] = data[i];//opslaan huidig msg in lastmsg
 	}
 }
-
-
 //functions
 void checkBuffer() {
 	//check of er te verwerken msg in buffer zitten en of de buffer niet vol is. 
@@ -537,8 +525,9 @@ void checkBuffer() {
 
 	GPIOR0 &= ~(1 << 0); //flag msg in buffer
 	GPIOR0 |= (1 << 1); //flag buffer full
+
 	for (byte i = 0; i < Bsize; i++) {
-		if (bfr[i].reg & (1 << 7) || bfr[i].reg & (1 << 6)) { //tonen of actieve loc
+		if (bfr[i].reg & (1 << 7)) { //|| bfr[i].reg & (1 << 6)) { //tonen of actieve loc
 			GPIOR0 |= (1 << 0); //buffer niet leeg(groen)
 		}
 		else {
@@ -547,7 +536,7 @@ void checkBuffer() {
 	}
 
 	PORTD &= ~(3 << 3); //clear leds, periodiek in loop()
-	//PORTD &= ~(1 << 4);
+	PORTD &= ~(1 << 4);
 	if (GPIOR0 & (1 << 0)) {
 		PIND |= (1 << 3);
 	}
@@ -556,14 +545,12 @@ void checkBuffer() {
 		//toevoegen als de volgorde van msg fouten geeft.
 		Bcount = 0;
 	}
-
 	if (GPIOR0 & (1 << 1))PIND |= (1 << 4);
 }
-
 void Loc(bool t) {
 	if (~preset[Prst].filter & (1 << 0))return; //Filter voor Loc msg
 
-	int adres; byte instr = 0; byte instrByte;
+	int adres; byte instructie = 0; byte instrByte;
 	/*
 	000 Decoder and Consist Control Instruction
 		001 Advanced Operation Instructions 115
@@ -576,7 +563,7 @@ void Loc(bool t) {
 
 	if (t) { //7 bits adres
 		adres = data[0];
-		instr = data[1] >> 5;
+		instructie = data[1] >> 5;
 		instrByte = 1;
 	}
 	else { //14 bits adres
@@ -587,60 +574,56 @@ void Loc(bool t) {
 		if (data[0] & (1 << 3))adres += 2048;
 		if (data[0] & (1 << 4))adres += 4096;
 		if (data[0] & (1 << 5))adres += 8192;
-		instr = data[2] >> 5;
+		instructie = data[2] >> 5;
 		instrByte = 2;
 	}
 
 	//Filters en 'bekende' msg weglaten
 
-	if ((instr == 2 || instr == 3) && preset[Prst].filter & (1 << 1)) { //direction and speed
+	if ((instructie == 2 || instructie == 3) && preset[Prst].filter & (1 << 1)) { //direction and speed
 		LocDrive(adres, instrByte); //instrByte geeft aan welk databyte de instructie bevat
 	}
-	else if (instr == 4) { //function group 1
+	else if (instructie == 4) { //function group 1
 
 	}
-	else if (instr == 5) { //Function group 2
+	else if (instructie == 5) { //Function group 2
 
 	}
-	else if (instr == 7) { //CV
+	else if (instructie == 7) { //CV
 
 	}
 	else {
 		return;// instructions 000 en 001 en 110 niet doorlaten
 	}
 	//Serial.print("Adres: "); Serial.print(adres);Serial.print("   INstr: "); Serial.println(instr);
+
+
 }
 void LocDrive(int adres, byte instrByte) { //called from loc()
-	
-	//Verwerkt direction en speed msg van loco
-	//zoeken of er een buffer voor deze loc dit type msg is. dus adres en byte 1 of 2
-	//Kijken of de instructie byte is veranderd
-	//zoja dan instructie byte vervangen en buffer actief stellen
 
-	byte found = 0;
 	for (byte i = 0; i < Bsize; i++) {
-		if (bfr[i].reg & (1 << 6) && bfr[i].reg & (1<<2) && bfr[i].adres == adres ){
+
+		if ((~bfr[i].reg & (1 << 6)) && (bfr[i].reg & (1 << 2)) && (bfr[i].adres == adres)) {
+
 			//actieve loc drive gevonden
 			//check for change
-			Serial.println("bfr gevonden");
-			if (bfr[i].instructie ^ data[instrByte] == 0) {
+			//Serial.println("bfr gevonden");
+
+			if ((bfr[i].instructie ^ data[instrByte]) == 0) {
 				return; //geen verandering, herhaalde msg
 			}
 			else { //msg veranderd aanpassen
 				bfr[i].instructie = data[instrByte];
+				bfr[i].tijd = millis();
 				bfr[i].reg |= (1 << 7); //msg weer tonen
+				Debug_bfr(i);
 				return; //verlaat function
 			}
-			found = i;
-		}
-		else { //geen buffer gevonden
-			Serial.println("geen bfr");
-			Write_Loc(adres, data[instrByte]);
 		}
 	}
-	
-	//if (found > 0) Serial.print("Adres: "); Serial.print(adres); Serial.print(" jo "); //Serial.println(instr);
-
+	//niet uit de functie gesprongen door 'return' dus geen msg gevonden
+	Serial.println("geen msg");
+	Write_Loc(adres, data[instrByte]);
 }
 void LocFunction() { //called from loc()
 	//
@@ -648,23 +631,37 @@ void LocFunction() { //called from loc()
 void LocCV() { //called from loc()
 
 }
-void Write_Loc(int adres, byte instr) { //adres en instructiebyte
-	byte free = 0; //vrije buffer
-	//vrije buffer zoeken, in stappen
-	//Eerst zoeken naar 'oude' loc msg
+byte FreeBfr() {
+	//zoekt en returned vrije buffer
+	//Eerst zoek vrije accesoire buffer, bit 7 false bit 6 true
 	for (byte i = 0; i < Bsize; i++) {
-		if (millis() - bfr[i].tijd > autoDelete) {//Buffer 10 sec niet gebruikt 
-			free = i; //gevonden te gebruiken buffer
-			i = Bsize; //for loop verlaten
+		if (bfr[i].reg & (1 << 6)) { //old accesoire bfr
+			if (~bfr[i].reg & (1 << 7))	return i;			
+		}
+		else { //old loc bfr
+			if ((millis() - bfr[i].tijd > 1000) && (~bfr[i].reg & (1 << 7))) {//Buffer 10 sec niet gebruikt, en not active (autodelete)
+				return i;
+			}
 		}
 	}
-	if (free > 0) {
-		//buffer aanmaken...
+	return Bsize;
+}
+void Write_Loc(int adres, byte instructie) { //adres en instructiebyte
+	byte free = FreeBfr();
+	Serial.println(free);
+	if (free == Bsize) return;  //Hier misschien nog een foutafhandeling?
 
-	}
-	else {
-		//hier nog een fout afhandeling als er geen vrije buffer wordt gevonden.
-	}
+	bfr[free].adres = adres;
+	bfr[free].instructie = instructie;
+	bfr[free].reg = B10000100; //7=tonen 6=loc 3=drive
+	bfr[free].tijd = millis();
+	Debug_bfr(free);
+}
+void Debug_bfr(byte buffer) {
+	Serial.print(buffer); Serial.print("  Adres:"); Serial.print(bfr[buffer].adres);
+	Serial.print(" instr:"); Serial.print(bfr[buffer].instructie, BIN); Serial.print(" Reg:");
+	Serial.print(bfr[buffer].reg, BIN);
+	Serial.print("  Tijd:"); Serial.println(bfr[buffer].tijd);
 }
 void Write_Acc(int adr, byte reg) { //called from 'notifyDccMsg()'
 	//verwerkt nieuw 'basic accessory decoder packet (artikel)
@@ -672,38 +669,33 @@ void Write_Acc(int adr, byte reg) { //called from 'notifyDccMsg()'
 	//Tijd opslaan in millis() , verschil geeft pulsduur getoont in de Off msg 
 	//bij  bit0 false, alleen de On msg verwerken, opslaan en tonen, simpeler dus
 	//kijken of msg nieuw is.	
-	byte Treg = reg;
+	//Serial.print("*");
 
+	byte Treg = reg;
 	bool nieuw = true; Treg |= (1 << 7);
 	for (byte i = 0; i < Bsize; i++) {
 		//zoeken naar door artikel bezette buffer
 		if (bfr[i].adres == adr && bfr[i].reg == Treg) {
 			nieuw = false;
-			//Serial.print("*");
+			//Serial.print("n");
 		}
 	}
-
 
 	if (nieuw) {
-		//Serial.println("new"); 
-		//als geen vrije buffer wordt gevonden dan command niet verwerkt
-		for (byte i = 0; i < Bsize; i++) {
-			if (~bfr[i].reg & (1 << 7) && ~bfr[i].reg & (1<<6)) { //bit7 false (tonen) bit6 false(actief loc)
-				bfr[i].adres = adr;
-				bfr[i].reg = reg;
-				bfr[i].tijd = millis();
-				bfr[i].reg |= (1 << 7); //set buffer active
-				i = Bsize; //uitspringen
-			}
-		}
+		byte buffer = FreeBfr();
+		if (buffer == Bsize)return; //uitspringen geen vrije buffer gevonden
+		bfr[buffer].adres = adr;
+		bfr[buffer].reg = reg;
+		bfr[buffer].tijd = millis();
+		bfr[buffer].reg |= (1 << 7); //set buffer active
 	}
 }
-
 //IO alles met de uitvoer van de ontvangen msg. periodiek of manual
 void IO_exe() {
 	bool read = true; byte count = 0;
 	//ervoor zorgen dat alle buffers in volgorde worden gelezen, dus Bcount
-	if (~GPIOR0 & (1 << 0))return; //stoppen als er geen te verwerken msg zijn.
+	if (~GPIOR0 & (1 << 0)) return; //stoppen als er geen te verwerken msg zijn.
+
 	while (read) {
 		//Serial.print("|");
 		//zolang read =true herhalen, volgorde belangrijk
@@ -712,143 +704,145 @@ void IO_exe() {
 		read = IO_dp(); //dp=displays msg 
 		Bcount++;
 		if (Bcount == Bsize)Bcount = 0;
-
 		count++;
 		if (count > Bsize)read = false; //exit als buffer blijft hangen. Misschien een autodelete er op los laten?
 	}
 	dp.display();
 }
+bool IO_DP_art() {
+	if (preset[Prst].reg & (1 << 0)) { //alleen de 'uit' tonen voor leesbaarheid
+		if (bfr[Bcount].reg & (1 << 0)) return true; //alleen 'uit' msg verwerken
+	}
+	//else { //aan en uit tonen
+		//if (~bfr[Bcount].reg & (1 << 0)) { //uit msg	
+			/*
+			//zoeken of er nog een 'aan' msg actief is, zoja deze buffer overslaan
+			//hopelijk oplossing voor het probleem dat 'aan' msg blijven hangen en in de buffer blijven
+			//Nog steeds niet helemaal goed...wel beter  ff verder gaan kijken of verderop een oplossing komt
 
+			byte count = 0;
+			GPIOR2 = bfr[Bcount].reg;
+			GPIOR2 |= (1 << 0); //set reg naar 'aan'
+			for (byte i = 0; i < Bsize; i++) {
+				if (bfr[i].adres == bfr[Bcount].adres && bfr[i].reg == GPIOR2) {
+					count++;
+					if (count > 1) bfr[i].reg &= ~(1 << 7); //set buffer free, meer dan 1 'aan' msg
+				}
+				if (count > 0)	return true;
+			}
+			*/
+			//}
+		//}
+		//Algemeen waardes bepalen
+	GPIOR2 = 0; //reset gpr
+	unsigned int puls = 0; byte r = 0; byte d = 0;
+
+	if (preset[Prst].reg & (1 << 0)) { //alleen uit msg verwerken, dus de aan weghalen en tijd uitrekenen			
+		for (byte i = 0; i < Bsize; i++) {
+			//volgorde belangrijk
+			r = bfr[i].reg ^ bfr[Bcount].reg;// reken maar na klopt...alleen bit0 van .reg = verschillend				
+			if (bfr[i].adres == bfr[Bcount].adres && r == 1) {
+				puls = bfr[Bcount].tijd - bfr[i].tijd;
+				bfr[i].reg &= ~(1 << 7);//buffer vrijgeven
+				i = Bsize; //exit lus
+			}
+		}
+	}
+	else {
+		if (bfr[Bcount].reg & (1 << 0)) GPIOR2 |= (1 << 0); //zet flag POWEROUT=on		
+	}
+
+	//type msg bepalen
+	if (bfr[Bcount].reg & (1 << 2)) { //CV msg
+		d = 0;
+	}
+	else if (bfr[Bcount].reg & (1 << 1)) {//rechtdoor
+		d = 1;
+	}
+	else {//afslaand
+		d = 2;
+	}
+
+	// Display
+	if (preset[Prst].reg & (1 << 1)) { //toon lijst
+		scrolldown();
+		dp.setCursor(0, 0);
+		dp.setTextSize(1); //6 pixels breed, 8 pixels hoog 10 pixels is regelhoogte
+		drawWissel(0, 0, 1, d);
+		dp.setCursor(22, 0); dp.print(bfr[Bcount].adres);
+
+		if (d > 0) { //not in CV
+		//select aan/uit of alleen uit	
+
+			dp.setCursor(57, 0);
+			if (preset[Prst].reg & (1 << 0)) { //alleen uit msg tonen
+				drawPuls(49, 0, 1); //x-y-size
+				dp.print(puls);
+				TXT(12); //"ms"
+			}
+			else { //aan en uit msg tonen
+				if (GPIOR2 & (1 << 0)) {
+					TXT(10); //"aan"
+				}
+				else {
+					TXT(11); //"uit"
+				}
+			}
+		}
+	}
+	else { //toon enkel
+		DP_mon(); //clears bovendeel display
+		drawWissel(3, 0, 2, d);
+		dp.setCursor(42, 0);
+		dp.setTextSize(2);
+		dp.print(bfr[Bcount].adres);
+		if (d > 0) { //not in CV
+			dp.setCursor(42, 18);
+
+			if (preset[Prst].reg & (1 << 0)) { //Alleen uit msg
+				drawPuls(13, 18, 2); //x-y-size
+				dp.print(puls);
+				TXT(12); //"ms"
+			}
+			else { //aan en uit tonen
+				if (GPIOR2 & (1 << 0)) {
+					TXT(10); //"aan"
+				}
+				else {
+					TXT(11); //"uit"
+				}
+			}
+			//byte weergeven
+			byte x;
+			for (byte i = 0; i < 8; i++) {
+				x = 15 * i;
+				if (i > 3)x += 4;
+				dp.drawRect(x, 38, 12, 12, 1);
+			}
+		}
+	}
+
+	bfr[Bcount].reg &= ~(1 << 7); // buffer vrijgeven
+	return false; //dus msg verwerkt
+}
+bool IO_DP_loc() {
+	//Filters ????? nee niet nodig dat wordt al bij aanmaken buffers gedaan. 
+
+	return true;
+}
 bool IO_dp() { //displays msg
 	bool read = true;
 	if (~bfr[Bcount].reg & (1 << 7))return true; //exit als niet vrij (alleen bij artikelen maken)
 	GPIOR2 = 0; //clear gpr, flags in functie
 	dp.setTextColor(WHITE);
-
 	//******Locomotief
-	if (bfr[Bcount].reg & (1 << 6)) { //Locomotief
-
-	}
-	//*********//Accesoire	artikel
-	else {
-		if (preset[Prst].reg & (1 << 0)) { //alleen de 'uit' tonen voor leesbaarheid
-			if (bfr[Bcount].reg & (1 << 0)) return true; //alleen 'uit' msg verwerken
-		}
-		else { //aan en uit tonen
-			if (~bfr[Bcount].reg & (1 << 0)) { //uit msg			
-
-
-				/*
-				//zoeken of er nog een 'aan' msg actief is, zoja deze buffer overslaan
-				//hopelijk oplossing voor het probleem dat 'aan' msg blijven hangen en in de buffer blijven
-				//Nog steeds niet helemaal goed...wel beter  ff verder gaan kijken of verderop een oplossing komt
-
-				byte count = 0;
-				GPIOR2 = bfr[Bcount].reg;
-				GPIOR2 |= (1 << 0); //set reg naar 'aan'
-				for (byte i = 0; i < Bsize; i++) {
-					if (bfr[i].adres == bfr[Bcount].adres && bfr[i].reg == GPIOR2) {
-						count++;
-						if (count > 1) bfr[i].reg &= ~(1 << 7); //set buffer free, meer dan 1 'aan' msg
-					}
-					if (count > 0)	return true;
-				}
-				*/
-			}
-		}
-		//Algemeen waardes bepalen
-		GPIOR2 = 0; //reset gpr
-		unsigned int puls = 0; byte r = 0; byte d = 0;
-
-		if (preset[Prst].reg & (1 << 0)) { //alleen uit msg verwerken, dus de aan weghalen en tijd uitrekenen			
-			for (byte i = 0; i < Bsize; i++) {
-				//volgorde belangrijk
-				r = bfr[i].reg ^ bfr[Bcount].reg;// reken maar na klopt...alleen bit0 van .reg = verschillend				
-				if (bfr[i].adres == bfr[Bcount].adres && r == 1) {
-					puls = bfr[Bcount].tijd - bfr[i].tijd;
-					bfr[i].reg &= ~(1 << 7);//buffer vrijgeven
-					i = Bsize; //exit lus
-				}
-			}
-		}
-		else {
-			if (bfr[Bcount].reg & (1 << 0)) GPIOR2 |= (1 << 0); //zet flag POWEROUT=on		
-		}
-
-		//type msg bepalen
-		if (bfr[Bcount].reg & (1 << 2)) { //CV msg
-			d = 0;
-		}
-		else if (bfr[Bcount].reg & (1 << 1)) {//rechtdoor
-			d = 1;
-		}
-		else {//afslaand
-			d = 2;
-		}
-
-		// Display
-		if (preset[Prst].reg & (1 << 1)) { //toon lijst
-			scrolldown();
-			dp.setCursor(0, 0);
-			dp.setTextSize(1); //6 pixels breed, 8 pixels hoog 10 pixels is regelhoogte
-			drawWissel(0, 0, 1, d);
-			dp.setCursor(22, 0); dp.print(bfr[Bcount].adres);
-
-			if (d > 0) { //not in CV
-			//select aan/uit of alleen uit	
-
-				dp.setCursor(57, 0);
-				if (preset[Prst].reg & (1 << 0)) { //alleen uit msg tonen
-					drawPuls(49, 0, 1); //x-y-size
-					dp.print(puls);
-					TXT(12); //"ms"
-				}
-				else { //aan en uit msg tonen
-					if (GPIOR2 & (1 << 0)) {
-						TXT(10); //"aan"
-					}
-					else {
-						TXT(11); //"uit"
-					}
-				}
-			}
-		}
-		else { //toon enkel
-			DP_mon(); //clears bovendeel display
-			drawWissel(3, 0, 2, d);
-			dp.setCursor(42, 0);
-			dp.setTextSize(2);
-			dp.print(bfr[Bcount].adres);
-			if (d > 0) { //not in CV
-				dp.setCursor(42, 18);
-
-				if (preset[Prst].reg & (1 << 0)) { //Alleen uit msg
-					drawPuls(13, 18, 2); //x-y-size
-					dp.print(puls);
-					TXT(12); //"ms"
-				}
-				else { //aan en uit tonen
-					if (GPIOR2 & (1 << 0)) {
-						TXT(10); //"aan"
-					}
-					else {
-						TXT(11); //"uit"
-					}
-				}
-				//byte weergeven
-				byte x;
-				for (byte i = 0; i < 8; i++) {
-					x = 15 * i;
-					if (i > 3)x += 4;
-					dp.drawRect(x, 38, 12, 12, 1);
-				}
-			}
-		}
-
-		bfr[Bcount].reg &= ~(1 << 7); // buffer vrijgeven
-
-	}
-	return false;
+	if (~bfr[Bcount].reg & (1 << 6)) { //Locomotief
+		return IO_DP_loc();
+	}	
+	else {//*********//Accesoire	artikel
+		//Tonen msg van accessoire werkt 10sept
+		return IO_DP_art();
+	}	
 }
 
 void scrolldown() {
@@ -873,7 +867,6 @@ void scrolldown() {
 	}
 	dp.display();
 }
-
 void drawLoc(byte x, byte y, byte s) {
 	//tekend loc icon
 	dp.fillRect(s*(x + 1), s*y, s * 5, s * 1, 1);//dak
@@ -919,7 +912,6 @@ void drawCheck(byte x, byte y, bool v) { //v=value
 		dp.drawRect(x, y, 6, 6, 1);
 	}
 }
-
 void TXT(byte n) {
 	switch (n) {
 
