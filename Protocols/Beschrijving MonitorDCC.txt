@@ -34,3 +34,11 @@ bit6
 bit7
 
 GPIOR2 gpio flags lokaal, dus binnen 1 functie alleen gebruiken
+
+
+
+symbols
+0 wissel CV
+1 wissel L
+2 wissel R
+10 Puls 
