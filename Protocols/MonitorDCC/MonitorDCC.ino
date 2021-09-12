@@ -26,7 +26,7 @@ char version[] = "V 1.01"; //Openingstekst versie aanduiding
 #define Bsize 8 //hoe groot is de artikel buffer?
 #define Psize 4 //aantal presets
 #define PFsize 15 //aantal programfases
-#define autoDelete 50 //tijd voor autodelete buffer inhoud 10sec
+#define autoDelete 10000 //tijd voor autodelete buffer inhoud 10sec
 
 //verkortingen 
 #define program GPIOR0 & (1<<2) //programmeer modus aan 
@@ -596,6 +596,7 @@ void LocMsg() { //called from loc()
 	case B111:
 		if (preset[Prst].filter & (1 << 3))RegI = 3; //bit 3 in bfr[].reg CV
 		break;
+
 	}
 	if (RegI == 0)return; //deze msg niks mee doen
 
@@ -627,17 +628,17 @@ void LocCV() { //called from loc()
 }
 byte FreeBfr() {
 	//zoekt en returned vrije buffer
-	//Eerst zoek vrije accesoire buffer, bit 7 false bit 6 true
-	for (byte i = 0; i < Bsize; i++) {
-		if (bfr[i].reg & (1 << 6)) { //old accesoire bfr
-			if (~bfr[i].reg & (1 << 7))	return i;
-		}
-		else { //old loc bfr
-			if ((millis() - bfr[i].tijd > 1000) && (~bfr[i].reg & (1 << 7))) {//Buffer 10 sec niet gebruikt, en not active (autodelete)
-				return i;
-			}
-		}
+	//Eerst zoek vrije niet te tonen oude accesoire buffer
+	for (byte b = 0; b < Bsize; b++) {
+		if (~bfr[b].reg & (1 << 7) && bfr[b].reg & (1 << 6)) return b; //oude niet actieve accesoire					
 	}
+
+	//nu zoeken naar een oude buffer
+	for (byte i = 0; i < Bsize; i++) {
+		if (bfr[i].tijd == 0) return i; //ongebruikte buffer
+		if (millis() - bfr[i].tijd > autoDelete) return i; //10sec niks gebeurt met deze buffer
+	}
+
 	return Bsize;
 }
 void Write_Loc(byte t) { //adres en instructiebyte
@@ -661,8 +662,6 @@ void Debug_bfr(bool n, byte buffer) {
 
 
 	*/
-
-
 	if (n) Serial.print("New ");
 	Serial.print(buffer); Serial.print("  Adres:"); Serial.print(bfr[buffer].adres);
 	Serial.print(" instr:"); Serial.print(bfr[buffer].instructie, BIN); Serial.print(" Reg:");
@@ -761,9 +760,9 @@ bool IO_DP_art() {
 	else {//afslaand
 		d = 2;
 	}
-
 	// Display
 	byte t = 11; //tekst 10=aan, 11=uit
+
 	if (preset[Prst].reg & (1 << 1)) { //toon lijst
 		scrolldown(); //bovenste regel vrijmaken
 		Symbol(0, 0, d, 1); //teken symbool d (0=wissel cv, 1=wissel R, 2=wissel A)	
@@ -785,19 +784,12 @@ bool IO_DP_art() {
 		Text(42, 0, 2, bfr[Bcount].adres, 0);
 		if (d > 0) { //not in CV
 			if (preset[Prst].reg & (1 << 0)) { //Alleen uit msg
-				Symbol(13, 18, 10, 2);
-				Text(42, 18, 2, puls, 12);
+				Symbol(13, 24, 10, 2);
+				Text(30, 24, 2, puls, 12);
 			}
 			else { //aan en uit tonen				
 				if (GPIOR2 & (1 << 0)) t = 10;
-				Text(42, 18, 2, 0, t);
-			}
-			//byte weergeven hier nog iets anders voor ?????vierkantjes onderin 
-			byte x;
-			for (byte i = 0; i < 8; i++) {
-				x = 15 * i;
-				if (i > 3)x += 4;
-				dp.drawRect(x, 38, 12, 12, 1);
+				Text(30, 24, 2, 0, t);
 			}
 		}
 	}
@@ -832,21 +824,57 @@ void Text(byte x, byte y, byte s, unsigned int value, byte TXTnummer) {
 	TXT(TXTnummer);
 }
 bool IO_DP_loc() {
-	//Wat voor Loc msg is dit
-	if (bfr[Bcount].reg & (1 << 2)) { //loc drive msg
-		//list of apart
-		if (preset[Prst].reg & (1 << 1)) { //lijst
-			scrolldown(); //bovenste regel vrijmaken
-			Symbol(0, 0, 20, 1); //teken symbool d (0=wissel cv, 1=wissel R, 2=wissel A)	
-			Text(22, 0, 1, bfr[Bcount].adres, 0); //waarde adres, geen tekst
-		}
-		else { //apart
-
-		}
+	byte x; byte y; byte s;
+	byte x2; byte x3;
+	byte y2;
+	byte speed = 0;
+	byte temp; byte dt;
+	// start display 
+	if (preset[Prst].reg & (1 << 1)) { //lijst
+		scrolldown(); //bovenste regel vrijmaken
+		x = 0; y = 0; s = 1;
+		x2 = 22; x3 = 49;
+		y2 = 0;
 	}
-	else if (bfr[Bcount].reg & (1 << 3)) { //loc CV
+	else { //apart
+		DP_mon(); //venster vrijmaken
+		x = 3; y = 2; s = 2; x2 = 49; x3 = 13; y2 = 24;
+	}
 
-	} //hier weer een else if naar de functions maar dat moet nog anders worden bedacht.
+	//start display
+	Symbol(x, y, 20, s); //teken symbool d (0=wissel cv, 1=wissel R, 2=wissel A)	
+	Text(x2, y, s, bfr[Bcount].adres, 0); //waarde adres, geen tekst
+
+	//soort msg
+	if (bfr[Bcount].reg & (1 << 2)) { //drive
+		//snelheid uitgaande CV29 bit1= true 28steps
+		temp = bfr[Bcount].instructie << 4;
+		temp = temp >> 4; //clear bit 7,6,5,4
+		if (temp > 1) {
+			speed = (temp - 1) * 2;
+		}
+		if (~bfr[Bcount].instructie & (1 << 4))speed--;
+
+		// dir 
+		temp = bfr[Bcount].instructie >> 5;
+		if (temp == 3) { //forward
+			dt = 15;
+		}
+		else { //reversed
+			dt = 16;
+		}
+
+		Text(x3, y2, s, speed, dt);
+	}
+	else if (bfr[Bcount].reg & (1 << 3)) { //CV
+
+	}
+	else if (bfr[Bcount].reg & (1 << 4)) { //Function 1
+
+	}
+	else if (bfr[Bcount].reg & (1 << 5)) { //Function 2
+
+	}
 
 	bfr[Bcount].reg &= ~(1 << 7); // buffer vrijgeven
 	return true;
@@ -932,6 +960,12 @@ void TXT(byte n) {
 		break;
 	case 12:
 		dp.print(F("ms"));
+		break;
+	case 15:
+		dp.print(F(">>"));
+		break;
+	case 16:
+		dp.print(F("<<"));
 		break;
 	}
 }
