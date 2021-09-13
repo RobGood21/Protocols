@@ -60,8 +60,8 @@ struct buffers {
 	//bit1 artikel true: Recht; false: afslaan
 	//bit2 true: msg=Drive
 	//bit3 true: msg=CV
-	//bit4 True: msg=function1
-	//bit5 True: msg=Function2 
+	//bit4  niet     True: msg=function1  na 13sept in 2 verwerken
+	//bit5  niet     True: msg=Function2 
 	//bit6
 	//bit6 true: accesoire; false: loc
 	//bit7 true: bezet; false: vrij
@@ -69,15 +69,13 @@ struct buffers {
 	unsigned int adres; //L&A: bevat adres acc en loc
 	unsigned long tijd; //L&A: bevat tijd laatste aanpassing
 	byte instructie; //Loc: bevat waarde instructie byte
-	byte CV;
-	byte CVV;
+	byte db[2];
 }; buffers bfr[Bsize]; //aantal buffer artikelen
 
 //variabelen
 int T_adres = 0; //tijdelijk adres
 byte T_instructie = 0; //Tijdelijk opslag instructie byte
-byte T_CV = 0; //Tijdelijke opslag CV keuze
-byte T_CVV = 0; //Tijdelijke opslag CV waarde
+byte T_db[2]; //Tijdelijke opslag
 
 
 byte prgfase;
@@ -558,8 +556,8 @@ void Loc(bool t) {
 	if (t) { //7 bits adres
 		T_adres = data[0];
 		T_instructie = data[1];
-		T_CV = data[2];
-		T_CVV = data[3];
+		T_db[0] = data[2];
+		T_db[1] = data[3];
 	}
 	else { //14 bits adres
 		T_adres = data[1];
@@ -570,55 +568,125 @@ void Loc(bool t) {
 		if (data[0] & (1 << 4))T_adres += 4096;
 		if (data[0] & (1 << 5))T_adres += 8192;
 		T_instructie = data[2];
-		T_CV = data[3];
-		T_CVV = data[4];
+		T_db[0] = data[3];
+		T_db[1] = data[4];
 	}
-	LocMsg();
-}
 
-void LocMsg() { //called from loc()
-	//000, 001, 110 not on this project V1.01 sept 2021  (misschien wel een melding tonen op display bij zo een msg?)
-	//bepaal soort msg 010=reversed 011=forward 100=F1 101=F2 111=CV en filter of getoond moet worden
+	//Drive/function or CV
 	byte RegI = 0;
 	switch (T_instructie >> 5) {
 	case B010:
-		if (preset[Prst].filter & (1 << 1)) RegI = 2; //bit 2 in het bfr[].reg reversed drive
+		if (preset[Prst].filter & (1 << 1)) {
+			RegI = 1; //bit 2 in het bfr[].reg reversed drive
+			LocMsg(1);
+		}
 		break;
 	case B011:
-		if (preset[Prst].filter & (1 << 1))RegI = 2; //bit2 in bfr[].reg forward drive
+		if (preset[Prst].filter & (1 << 1)) {
+			RegI = 1; //bit2 in bfr[].reg forward drive
+			LocMsg(1);
+		}
 		break;
 	case B100:
-		if (preset[Prst].filter & (1 << 2))RegI = 4; //bit4 in bfr[].reg Function 1
+		//Serial.println(T_instructie,BIN);
+
+		if (preset[Prst].filter & (1 << 2)) {
+			RegI = 2; //bit4 in bfr[].reg Function 1
+			LocMsg(2);
+		}
 		break;
 	case B101:
-		if (preset[Prst].filter & (1 << 2))RegI = 5; //bit5 in bfr[].reg Function 2
+		if (preset[Prst].filter & (1 << 2)) {
+			RegI = 3; //bit5 in bfr[].reg Function 2
+			LocMsg(3);
+		}
 		break;
 	case B111:
-		if (preset[Prst].filter & (1 << 3))RegI = 3; //bit 3 in bfr[].reg CV
+		if (preset[Prst].filter & (1 << 3))LocMsgCV();
 		break;
-
 	}
 	if (RegI == 0)return; //deze msg niks mee doen
+}
+void LocMsgCV() {
 
+}
+void LocMsg(byte tiep) { //called from loc() 1=drive 2=function 1 3 = function2
+	//000, 001, 110 not on this project V1.01 sept 2021  (misschien wel een melding tonen op display bij zo een msg?)
+	//bepaal soort msg 010=reversed 011=forward 100=F1 101=F2 111=CV en filter of getoond moet worden
+	//gebruik GPIOR2 as temp byte
 	for (byte i = 0; i < Bsize; i++) {
-		if ((~bfr[i].reg & (1 << 6)) && (bfr[i].reg & (1 << RegI)) && (bfr[i].adres == T_adres)) {
-			if ((bfr[i].instructie ^ T_instructie) == 0) {
-				return; //geen verandering, herhaalde msg
-			}
-			else { //msg veranderd aanpassen
-				bfr[i].instructie = T_instructie;
-				bfr[i].CV = T_CV;
-				bfr[i].CVV = T_CVV;
-				bfr[i].tijd = millis();
-				bfr[i].reg |= (1 << 7); //msg weer tonen
-				Debug_bfr(false, i); //print buffer inhoud
-				return; //verlaat function
+		if ((~bfr[i].reg & (1 << 6)) && (bfr[i].adres == T_adres) && (bfr[i].reg & (1 << 2))) { //drive msg/functions
+			//check type ontvangen instructie (RegI)
+			switch (tiep) {
+			case 1: //drive
+				if ((bfr[i].instructie ^ T_instructie) == 0) {
+					return;  //herhaalde drive msg
+				}
+				else {
+					//Serial.print(tiep);
+					bfr[i].instructie = T_instructie;
+					changed(i);
+					//bfr[i].tijd = millis();
+					//bfr[i].reg |= (1 << 7); //msg weer tonen
+					//Debug_bfr(false, i); //print buffer inhoud
+					return; //verlaat function
+				}
+				break;
+
+			case 2: //Function group 1	
+				//db[0] bepaal functies 1 en vergelijk met db[0]
+				//5 functies FL (headlights) F1~F4 
+				//Serial.println(T_instructie);				
+				GPIOR2 = T_instructie << 3;
+				GPIOR2 = GPIOR2 >> 3; //isoleer bit 0~bit4 
+				//Serial.print(GPIOR2, BIN);
+				if (bfr[i].db[0] == GPIOR2) {
+					return; //herhaalde functie msg
+				}
+				else { //Functions 1 veranderd 
+					Serial.println(T_instructie, BIN);
+					//uitgaande dat CV29bit1=true (28 snelheidsstappen) geeft bit 4 FL(headlights) bit0 F1 bit3 F3					
+					bfr[i].db[0] = GPIOR2;
+					changed(i);
+					//bfr[i].tijd = millis();
+					//bfr[i].reg |= (1 << 7); //msg weer tonen
+					//Debug_bfr(false, i); //print buffer inhoud
+				}
+				break;
+
+			case 3://Function group 2
+				//db[1] bepaal functies 2 en vergelijk met db[1]
+			
+				byte xb = 0; 
+				GPIOR2 = bfr[i].db[1];				
+				if (~T_instructie & (1 << 4)) xb = 4;  //F5~F8 db[1] bits 7~4					
+				for (byte a = 0; a < 4; a++) {
+					GPIOR2 &= ~(1 << a + xb); //clear bit
+					if (T_instructie & (1 << a)) GPIOR2 |= (1 << a + xb);
+				}
+				//Serial.print(GPIOR2);
+
+
+				if (GPIOR2 == bfr[i].db[1]) {
+					return;
+				}
+				else {
+					bfr[i].db[1] = GPIOR2;
+					changed(i);
+				}
+				break;
 			}
 		}
 	}
 	//niet uit de functie gesprongen door 'return' dus geen msg gevonden
 	//Serial.println("geen msg");
-	Write_Loc(RegI); //RegI=type Loc message 2=drive 3=CV 4 =functions1 5=functions 2
+	if (tiep == 1)Write_Loc(); //1=drive 2=functions 1 3=functions 2  (alleen nieuwe buffer maken bij drive msg.
+}
+
+void changed(byte b) {
+	bfr[b].tijd = millis();
+	bfr[b].reg |= (1 << 7); //msg weer tonen
+	Debug_bfr(false, b); //print buffer inhoud
 }
 void LocFunction() { //called from loc()
 	//
@@ -632,26 +700,24 @@ byte FreeBfr() {
 	for (byte b = 0; b < Bsize; b++) {
 		if (~bfr[b].reg & (1 << 7) && bfr[b].reg & (1 << 6)) return b; //oude niet actieve accesoire					
 	}
-
-	//nu zoeken naar een oude buffer
+	//nu zoeken naar een oude lang niet gebruikte buffer
 	for (byte i = 0; i < Bsize; i++) {
 		if (bfr[i].tijd == 0) return i; //ongebruikte buffer
 		if (millis() - bfr[i].tijd > autoDelete) return i; //10sec niks gebeurt met deze buffer
 	}
-
 	return Bsize;
 }
-void Write_Loc(byte t) { //adres en instructiebyte
+void Write_Loc() { //adres en instructiebyte
 	byte free = FreeBfr();
 	//Serial.println(free);
 	if (free == Bsize) return;  //Hier misschien nog een foutafhandeling?
 	bfr[free].adres = T_adres;
 	bfr[free].instructie = T_instructie; //= eerste byte na adres.
-	bfr[free].CV = T_CV;
-	bfr[free].CV = T_CVV;
+	bfr[free].db[0] = 0;
+	bfr[free].db[1] = 0;
 	bfr[free].reg = 0;
 	bfr[free].reg |= (1 << 7); //7=tonen 6=loc(false)
-	bfr[free].reg |= (1 << t); //type Loc message 2 = drive 3 = CV 4 = functions1 5 = functions 2
+	bfr[free].reg |= (1 << 2); //type Loc message 2 = drive/functions 3 = CV 
 	bfr[free].tijd = millis();
 	Debug_bfr(true, free);
 }
@@ -659,14 +725,12 @@ void Debug_bfr(bool n, byte buffer) {
 	/*
 	Bij een drive msg wordt nu de checksum in de CV geschreven, maakt denk ik niet uit omdat deze CV
 	niet wordt getoond bij deze type msg. uit filteren kan maar geeft extra instructies
-
-
 	*/
 	if (n) Serial.print("New ");
 	Serial.print(buffer); Serial.print("  Adres:"); Serial.print(bfr[buffer].adres);
 	Serial.print(" instr:"); Serial.print(bfr[buffer].instructie, BIN); Serial.print(" Reg:");
 	Serial.print(bfr[buffer].reg, BIN);
-	Serial.print(" CV:"); Serial.print(bfr[buffer].CV, BIN); Serial.print(" CVV:"); Serial.print(bfr[buffer].CVV, BIN);
+	Serial.print(" db0/CV:"); Serial.print(bfr[buffer].db[0], BIN); Serial.print(" db1/CVV:"); Serial.print(bfr[buffer].db[1], BIN);
 	Serial.print("  Tijd:"); Serial.println(bfr[buffer].tijd);
 }
 void Write_Acc(int adr, byte reg) { //called from 'notifyDccMsg()'
