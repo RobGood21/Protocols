@@ -354,9 +354,6 @@ void DP_prg() { //iedere keer geheel vernieuwen?
 		if (prgfase == 9) { px = x[3]; py = y + 8; w = x[3] + 28; h = y + 8; } //cursor Artikelen CV
 	}
 
-
-
-
 	//if (prgfase == 6)dp.drawLine(x[0], y + 8, x[0] + 22, y + 8, 1); //print cursor
 
 	//drawWissel(0, 22, 1, 0);
@@ -464,12 +461,17 @@ void notifyDccMsg(DCC_MSG * Msg) {
 	//stoppen met volle buffer lijkt me niet goed...
 	//if (GPIOR0 & (1 << 1))return; //Stop als buffer vol is
 
+
+
+
 	bool nieuw = true;
 	for (byte i = 0; i < MAX_DCC_MESSAGE_LEN; i++) {
 		if (lastmsg[i] != Msg->Data[i]) nieuw = false;
 	}
 
 	if (nieuw)return;
+
+
 	//Serial.println(Msg->Data[0], BIN);
 	//local variables
 
@@ -538,20 +540,21 @@ void checkBuffer() {
 	}
 
 	PORTD &= ~(3 << 3); //clear leds, periodiek in loop()
-	PORTD &= ~(1 << 4);
+	//PORTD &= ~(1 << 4);
+
 	if (GPIOR0 & (1 << 0)) {
 		PIND |= (1 << 3);
 	}
 	else {
-		//eventueel dit herhalen in de callback anders een volgorde op ingevulde tijd
-		//toevoegen als de volgorde van msg fouten geeft.
 		Bcount = 0;
 	}
 	if (GPIOR0 & (1 << 1))PIND |= (1 << 4);
 }
 void Loc(bool t) {
+
 	//000, 001, 110 not on this project V1.01 sept 2021 
 	//instr = data[2] >> 5; //010=reversed 011=forward 100=F1 101=F2 111=CV 
+
 	if (~preset[Prst].filter & (1 << 0))return; //Filter voor Loc msg
 	if (t) { //7 bits adres
 		T_adres = data[0];
@@ -573,43 +576,56 @@ void Loc(bool t) {
 	}
 
 	//Drive/function or CV
-	byte RegI = 0;
+	bool nt = true;
 	switch (T_instructie >> 5) {
 	case B010:
 		if (preset[Prst].filter & (1 << 1)) {
-			RegI = 1; //bit 2 in het bfr[].reg reversed drive
+			nt= false;
 			LocMsg(1);
 		}
 		break;
 	case B011:
 		if (preset[Prst].filter & (1 << 1)) {
-			RegI = 1; //bit2 in bfr[].reg forward drive
+			nt= false;
 			LocMsg(1);
 		}
 		break;
 	case B100:
-		//Serial.println(T_instructie,BIN);
-
 		if (preset[Prst].filter & (1 << 2)) {
-			RegI = 2; //bit4 in bfr[].reg Function 1
+			nt= false;
 			LocMsg(2);
 		}
 		break;
 	case B101:
 		if (preset[Prst].filter & (1 << 2)) {
-			RegI = 3; //bit5 in bfr[].reg Function 2
+			nt= false;
 			LocMsg(3);
 		}
 		break;
 	case B111:
-		if (preset[Prst].filter & (1 << 3))LocMsgCV();
+		if (preset[Prst].filter & (1 << 3)) {
+			nt= false;
+			LocMsgCV(); 
+		}
 		break;
 	}
-	if (RegI == 0)return; //deze msg niks mee doen
+	if(nt)return; //deze msg niks mee doen
 }
-void LocMsgCV() {
 
+void LocMsgCV() {
+	//Maak nieuw message Loc CV 
+	Serial.print("cv");
+	byte buffer = FreeBfr();
+	bfr[buffer].adres = T_adres;
+	bfr[buffer].reg = 0;
+	bfr[buffer].reg |= B10001000; //active, loc, CV
+	bfr[buffer].instructie = T_instructie;
+	bfr[buffer].db[0] = T_db[0];
+	bfr[buffer].db[1] = T_db[1];
+	bfr[buffer].tijd = millis();
+	Debug_bfr(true,buffer);
 }
+
 void LocMsg(byte tiep) { //called from loc() 1=drive 2=function 1 3 = function2
 	//000, 001, 110 not on this project V1.01 sept 2021  (misschien wel een melding tonen op display bij zo een msg?)
 	//bepaal soort msg 010=reversed 011=forward 100=F1 101=F2 111=CV en filter of getoond moet worden
@@ -626,9 +642,6 @@ void LocMsg(byte tiep) { //called from loc() 1=drive 2=function 1 3 = function2
 					//Serial.print(tiep);
 					bfr[i].instructie = T_instructie;
 					changed(i);
-					//bfr[i].tijd = millis();
-					//bfr[i].reg |= (1 << 7); //msg weer tonen
-					//Debug_bfr(false, i); //print buffer inhoud
 					return; //verlaat function
 				}
 				break;
@@ -644,29 +657,24 @@ void LocMsg(byte tiep) { //called from loc() 1=drive 2=function 1 3 = function2
 					return; //herhaalde functie msg
 				}
 				else { //Functions 1 veranderd 
-					Serial.println(T_instructie, BIN);
+					//Serial.println(T_instructie, BIN);
 					//uitgaande dat CV29bit1=true (28 snelheidsstappen) geeft bit 4 FL(headlights) bit0 F1 bit3 F3					
 					bfr[i].db[0] = GPIOR2;
 					changed(i);
-					//bfr[i].tijd = millis();
-					//bfr[i].reg |= (1 << 7); //msg weer tonen
-					//Debug_bfr(false, i); //print buffer inhoud
 				}
 				break;
 
 			case 3://Function group 2
-				//db[1] bepaal functies 2 en vergelijk met db[1]
-			
-				byte xb = 0; 
-				GPIOR2 = bfr[i].db[1];				
-				if (~T_instructie & (1 << 4)) xb = 4;  //F5~F8 db[1] bits 7~4					
+				//db[1] bepaal functies 2 en vergelijk met db[1]			
+				byte xb = 0;
+				GPIOR2 = bfr[i].db[1];
+				if (~T_instructie & (1 << 4)) xb = 4;  //F5~F8 db[1] bits 7~4	
+
 				for (byte a = 0; a < 4; a++) {
 					GPIOR2 &= ~(1 << a + xb); //clear bit
 					if (T_instructie & (1 << a)) GPIOR2 |= (1 << a + xb);
 				}
 				//Serial.print(GPIOR2);
-
-
 				if (GPIOR2 == bfr[i].db[1]) {
 					return;
 				}
@@ -680,31 +688,29 @@ void LocMsg(byte tiep) { //called from loc() 1=drive 2=function 1 3 = function2
 	}
 	//niet uit de functie gesprongen door 'return' dus geen msg gevonden
 	//Serial.println("geen msg");
+	
 	if (tiep == 1)Write_Loc(); //1=drive 2=functions 1 3=functions 2  (alleen nieuwe buffer maken bij drive msg.
 }
-
 void changed(byte b) {
 	bfr[b].tijd = millis();
 	bfr[b].reg |= (1 << 7); //msg weer tonen
 	Debug_bfr(false, b); //print buffer inhoud
 }
-void LocFunction() { //called from loc()
-	//
-}
-void LocCV() { //called from loc()
-
-}
 byte FreeBfr() {
-	//zoekt en returned vrije buffer
-	//Eerst zoek vrije niet te tonen oude accesoire buffer
+	//Hier kan zeker nog aan gewerkt worden voor een zoo slim mogelijke keuze van een vrije buffer	
+
+	//oude niet actieve accesoire(bit6 van reg)  of CV(bit3 van reg) buffer
 	for (byte b = 0; b < Bsize; b++) {
-		if (~bfr[b].reg & (1 << 7) && bfr[b].reg & (1 << 6)) return b; //oude niet actieve accesoire					
+		if ((~bfr[b].reg & (1 << 7)) && (bfr[b].reg & (1 << 6) || bfr[b].reg & (1<<3))) return b; 					
 	}
 	//nu zoeken naar een oude lang niet gebruikte buffer
 	for (byte i = 0; i < Bsize; i++) {
 		if (bfr[i].tijd == 0) return i; //ongebruikte buffer
-		if (millis() - bfr[i].tijd > autoDelete) return i; //10sec niks gebeurt met deze buffer
+		if (millis() - bfr[i].tijd > autoDelete  && ~bfr[i].reg & (1<<7)) return i; //10sec niks gebeurt met deze niet actieve buffer.
 	}
+
+	//hier kan nog zoeken naar een hele oude buffer
+
 	return Bsize;
 }
 void Write_Loc() { //adres en instructiebyte
@@ -741,7 +747,7 @@ void Write_Acc(int adr, byte reg) { //called from 'notifyDccMsg()'
 	//kijken of msg nieuw is.	
 	//Serial.print("*");
 
-	byte Treg = reg;
+	byte Treg = reg; byte buffer;
 	bool nieuw = true; Treg |= (1 << 7);
 	for (byte i = 0; i < Bsize; i++) {
 		//zoeken naar door artikel bezette buffer
@@ -752,19 +758,21 @@ void Write_Acc(int adr, byte reg) { //called from 'notifyDccMsg()'
 	}
 
 	if (nieuw) {
-		byte buffer = FreeBfr();
+		buffer = FreeBfr();
 		if (buffer == Bsize)return; //uitspringen geen vrije buffer gevonden
 		bfr[buffer].adres = adr;
 		bfr[buffer].reg = reg;
 		bfr[buffer].tijd = millis();
 		bfr[buffer].reg |= (1 << 7); //set buffer active
 	}
+	Debug_bfr(false, buffer);
 }
 //IO alles met de uitvoer van de ontvangen msg. periodiek of manual
 void IO_exe() {
 	bool read = true; byte count = 0;
 	//ervoor zorgen dat alle buffers in volgorde worden gelezen, dus Bcount
-	if (~GPIOR0 & (1 << 0)) return; //stoppen als er geen te verwerken msg zijn.
+
+//	if (~GPIOR0 & (1 << 0)) return; //stoppen als er geen te verwerken msg zijn.
 
 	while (read) {
 		//Serial.print("|");
@@ -779,11 +787,12 @@ void IO_exe() {
 	}
 	dp.display();
 }
-
 bool IO_dp() { //displays msg's 
 	if (~bfr[Bcount].reg & (1 << 7))return true; //exit als niet vrij (alleen bij artikelen maken)
-	GPIOR2 = 0; //clear gpr, flags in functie
-	dp.setTextColor(WHITE);
+	
+	//GPIOR2 = 0; //clear gpr, flags in functie
+	
+	//dp.setTextColor(WHITE);
 	//******Locomotief
 	if (~bfr[Bcount].reg & (1 << 6)) { //Locomotief
 		return IO_DP_loc();
@@ -879,7 +888,6 @@ void Symbol(byte x, byte y, byte number, byte s) {
 		break;
 	}
 }
-
 void Text(byte x, byte y, byte s, unsigned int value, byte TXTnummer) {
 	dp.setTextSize(s);
 	dp.setTextColor(1);
@@ -927,23 +935,12 @@ bool IO_DP_loc() {
 		else { //reversed
 			dt = 16;
 		}
-
 		Text(x3, y2, s, speed, dt);
-	}
-	else if (bfr[Bcount].reg & (1 << 3)) { //CV
-
-	}
-	else if (bfr[Bcount].reg & (1 << 4)) { //Function 1
-
-	}
-	else if (bfr[Bcount].reg & (1 << 5)) { //Function 2
-
 	}
 
 	bfr[Bcount].reg &= ~(1 << 7); // buffer vrijgeven
 	return true;
 }
-
 void scrolldown() {
 	//blok van 50 bovenste lijnen 10 (regelhoogte nog uitzoeken) naar beneden plaatsen
 	//regel voor regel onderste regel y=40~y=49 zwart maken
