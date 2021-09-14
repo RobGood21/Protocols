@@ -69,7 +69,7 @@ struct buffers {
 	unsigned int adres; //L&A: bevat adres acc en loc
 	unsigned long tijd; //L&A: bevat tijd laatste aanpassing
 	byte instructie; //Loc: bevat waarde instructie byte
-	byte db[2];
+	byte db[3]; //tijdelijk van 2 > 3
 }; buffers bfr[Bsize]; //aantal buffer artikelen
 
 //variabelen
@@ -457,23 +457,13 @@ void ParaDown() {
 void notifyDccMsg(DCC_MSG * Msg) {
 	//checkBuffer();
    //msg worden vaak meerdere malen uitgezonden, dubbele eruit filteren
-
 	//stoppen met volle buffer lijkt me niet goed...
 	//if (GPIOR0 & (1 << 1))return; //Stop als buffer vol is
-
-
-
-
 	bool nieuw = true;
 	for (byte i = 0; i < MAX_DCC_MESSAGE_LEN; i++) {
 		if (lastmsg[i] != Msg->Data[i]) nieuw = false;
 	}
-
 	if (nieuw)return;
-
-
-	//Serial.println(Msg->Data[0], BIN);
-	//local variables
 
 	for (byte i; i < 6; i++) {
 		data[i] = Msg->Data[i];
@@ -499,13 +489,17 @@ void notifyDccMsg(DCC_MSG * Msg) {
 		adr = adr * 4;
 		if (~bte &(1 << 2))adr -= 2;
 		if (~bte & (1 << 1))adr -= 1;
+
 		if (bte & (1 << 3))reg |= (1 << 0); //onoff
 		if (bte & (1 << 0))reg |= (1 << 1);//false=rechtdoor, true = afslaan
-		if (data[3] > 0)reg |= (1 << 2);  //("CV");
 		reg |= (1 << 6); //accessoire
-		Write_Acc(adr, reg); // accessoire msg ontvangen
-	//}
-
+		if (data[3] > 0) {
+			reg |= (1 << 2);  //("CV");
+			Write_AccCV(adr);
+		}
+		else {
+			Write_Acc(adr, reg); // accessoire msg ontvangen				
+		}
 	}
 	else if (db < 232) {
 		//Multi-Function (loc) Decoders with 14 bit 60 addresses
@@ -580,38 +574,37 @@ void Loc(bool t) {
 	switch (T_instructie >> 5) {
 	case B010:
 		if (preset[Prst].filter & (1 << 1)) {
-			nt= false;
+			nt = false;
 			LocMsg(1);
 		}
 		break;
 	case B011:
 		if (preset[Prst].filter & (1 << 1)) {
-			nt= false;
+			nt = false;
 			LocMsg(1);
 		}
 		break;
 	case B100:
 		if (preset[Prst].filter & (1 << 2)) {
-			nt= false;
+			nt = false;
 			LocMsg(2);
 		}
 		break;
 	case B101:
 		if (preset[Prst].filter & (1 << 2)) {
-			nt= false;
+			nt = false;
 			LocMsg(3);
 		}
 		break;
 	case B111:
 		if (preset[Prst].filter & (1 << 3)) {
-			nt= false;
-			LocMsgCV(); 
+			nt = false;
+			LocMsgCV();
 		}
 		break;
 	}
-	if(nt)return; //deze msg niks mee doen
+	if (nt)return; //deze msg niks mee doen
 }
-
 void LocMsgCV() {
 	//Maak nieuw message Loc CV 
 	Serial.print("cv");
@@ -623,9 +616,8 @@ void LocMsgCV() {
 	bfr[buffer].db[0] = T_db[0];
 	bfr[buffer].db[1] = T_db[1];
 	bfr[buffer].tijd = millis();
-	Debug_bfr(true,buffer);
+	Debug_bfr(true, buffer);
 }
-
 void LocMsg(byte tiep) { //called from loc() 1=drive 2=function 1 3 = function2
 	//000, 001, 110 not on this project V1.01 sept 2021  (misschien wel een melding tonen op display bij zo een msg?)
 	//bepaal soort msg 010=reversed 011=forward 100=F1 101=F2 111=CV en filter of getoond moet worden
@@ -688,7 +680,7 @@ void LocMsg(byte tiep) { //called from loc() 1=drive 2=function 1 3 = function2
 	}
 	//niet uit de functie gesprongen door 'return' dus geen msg gevonden
 	//Serial.println("geen msg");
-	
+
 	if (tiep == 1)Write_Loc(); //1=drive 2=functions 1 3=functions 2  (alleen nieuwe buffer maken bij drive msg.
 }
 void changed(byte b) {
@@ -698,18 +690,21 @@ void changed(byte b) {
 }
 byte FreeBfr() {
 	//Hier kan zeker nog aan gewerkt worden voor een zoo slim mogelijke keuze van een vrije buffer	
-
 	//oude niet actieve accesoire(bit6 van reg)  of CV(bit3 van reg) buffer
 	for (byte b = 0; b < Bsize; b++) {
-		if ((~bfr[b].reg & (1 << 7)) && (bfr[b].reg & (1 << 6) || bfr[b].reg & (1<<3))) return b; 					
-	}
-	//nu zoeken naar een oude lang niet gebruikte buffer
-	for (byte i = 0; i < Bsize; i++) {
-		if (bfr[i].tijd == 0) return i; //ongebruikte buffer
-		if (millis() - bfr[i].tijd > autoDelete  && ~bfr[i].reg & (1<<7)) return i; //10sec niks gebeurt met deze niet actieve buffer.
+		if (~bfr[b].reg & (1 << 7)) {
+			if (bfr[b].reg & (1 << 6))return b;
+			if (bfr[b].reg & (1 << 3)) return b;
+		}
 	}
 
-	//hier kan nog zoeken naar een hele oude buffer
+	for (byte i = 0; i < Bsize; i++) {
+		if (~bfr[i].reg & (1 << 7)) {
+			if (millis() - bfr[i].tijd > autoDelete)return i;
+		}
+	}
+
+	//hier kan nog zoeken naar een hele oude buffer die is blijven hangen
 
 	return Bsize;
 }
@@ -717,6 +712,8 @@ void Write_Loc() { //adres en instructiebyte
 	byte free = FreeBfr();
 	//Serial.println(free);
 	if (free == Bsize) return;  //Hier misschien nog een foutafhandeling?
+	clearBuffer(free);
+
 	bfr[free].adres = T_adres;
 	bfr[free].instructie = T_instructie; //= eerste byte na adres.
 	bfr[free].db[0] = 0;
@@ -727,6 +724,14 @@ void Write_Loc() { //adres en instructiebyte
 	bfr[free].tijd = millis();
 	Debug_bfr(true, free);
 }
+void clearBuffer(byte buffer) {
+	bfr[buffer].adres = 0;
+	bfr[buffer].instructie = 0;
+	bfr[buffer].tijd = 0;
+	bfr[buffer].db[0] = 0;
+	bfr[buffer].db[1] = 0;
+	bfr[buffer].db[2] = 0;
+}
 void Debug_bfr(bool n, byte buffer) {
 	/*
 	Bij een drive msg wordt nu de checksum in de CV geschreven, maakt denk ik niet uit omdat deze CV
@@ -734,10 +739,30 @@ void Debug_bfr(bool n, byte buffer) {
 	*/
 	if (n) Serial.print("New ");
 	Serial.print(buffer); Serial.print("  Adres:"); Serial.print(bfr[buffer].adres);
-	Serial.print(" instr:"); Serial.print(bfr[buffer].instructie, BIN); Serial.print(" Reg:");
-	Serial.print(bfr[buffer].reg, BIN);
-	Serial.print(" db0/CV:"); Serial.print(bfr[buffer].db[0], BIN); Serial.print(" db1/CVV:"); Serial.print(bfr[buffer].db[1], BIN);
+	Serial.print(" Reg:"); Serial.print(bfr[buffer].reg, BIN);
+	Serial.print(" instr:"); Serial.print(bfr[buffer].instructie, BIN);
+
+	Serial.print(" db0:"); Serial.print(bfr[buffer].db[0], BIN); Serial.print(" db1:"); Serial.print(bfr[buffer].db[1], BIN);
+	Serial.print(" db2:"); Serial.print(bfr[buffer].db[2], BIN);
 	Serial.print("  Tijd:"); Serial.println(bfr[buffer].tijd);
+}
+void Write_AccCV(int adr) {
+	//schrijft een Accesoire CV in een buffer, deze msg wordt niet herhaald dus geen routine nodig
+	//voor uitvangen dubbele
+	//databytes en reg is voldoende 
+	byte buffer = FreeBfr();
+	if (buffer == Bsize)return;
+	clearBuffer(buffer);
+
+	bfr[buffer].adres = adr;
+	bfr[buffer].reg = B11001000, //bit7 active bit6 accessoire bit 3 CV msg
+		bfr[buffer].instructie = data[1];
+	bfr[buffer].db[0] = data[2];
+	bfr[buffer].db[1] = data[3];
+	bfr[buffer].db[2] = data[4];
+	bfr[buffer].tijd = millis();
+	Debug_bfr(true, buffer);
+	//Serial.println("accCV");
 }
 void Write_Acc(int adr, byte reg) { //called from 'notifyDccMsg()'
 	//verwerkt nieuw 'basic accessory decoder packet (artikel)
@@ -753,13 +778,14 @@ void Write_Acc(int adr, byte reg) { //called from 'notifyDccMsg()'
 		//zoeken naar door artikel bezette buffer
 		if (bfr[i].adres == adr && bfr[i].reg == Treg) {
 			nieuw = false;
-			//Serial.print("n");
 		}
 	}
 
 	if (nieuw) {
 		buffer = FreeBfr();
 		if (buffer == Bsize)return; //uitspringen geen vrije buffer gevonden
+		clearBuffer(buffer);
+
 		bfr[buffer].adres = adr;
 		bfr[buffer].reg = reg;
 		bfr[buffer].tijd = millis();
@@ -789,9 +815,9 @@ void IO_exe() {
 }
 bool IO_dp() { //displays msg's 
 	if (~bfr[Bcount].reg & (1 << 7))return true; //exit als niet vrij (alleen bij artikelen maken)
-	
+
 	//GPIOR2 = 0; //clear gpr, flags in functie
-	
+
 	//dp.setTextColor(WHITE);
 	//******Locomotief
 	if (~bfr[Bcount].reg & (1 << 6)) { //Locomotief
