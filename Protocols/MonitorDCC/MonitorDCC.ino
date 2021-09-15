@@ -140,7 +140,7 @@ void setup() {
 
 	DP_welcome(); //toon opening text
 	delay(500);
-	DP_mon();
+	DP_single();
 	MEM_read();
 	//xtra init
 	GPIOR2 = 0;
@@ -173,14 +173,8 @@ void DP_welcome() {
 	dp.print(version);
 	dp.display();
 }
-void DP_mon() { //maakt display schoon, voor msg 
+void DP_single() { //maakt display schoon, voor msg 
 	dp.clearDisplay();
-	dp.drawLine(0, 54, 128, 54, 1);
-	dp.setTextSize(1);
-	dp.setTextColor(WHITE);
-	dp.setCursor(10, 55);
-	// Display static text
-	dp.println(F("Hier onderbalk"));
 	dp.display();
 }
 void loop() {
@@ -246,8 +240,7 @@ void SW_on(byte sw) {
 		}
 		else { //monitor tonen
 			MEM_write();
-			DP_mon();
-
+			DP_single();
 		}
 		break;
 	case 1:
@@ -278,9 +271,7 @@ void SW_on(byte sw) {
 		}
 		else {
 			IO_exe();
-
 		}
-
 		break;
 
 	}
@@ -455,21 +446,18 @@ void ParaDown() {
 }
 //terugmeldingen (callback) uit libraries (NmraDCC)
 void notifyDccMsg(DCC_MSG * Msg) {
-	//checkBuffer();
-   //msg worden vaak meerdere malen uitgezonden, dubbele eruit filteren
-	//stoppen met volle buffer lijkt me niet goed...
-	//if (GPIOR0 & (1 << 1))return; //Stop als buffer vol is
+	//direct achter elkaar ontvangen gelijke msg's uitfilteren
 	bool nieuw = true;
 	for (byte i = 0; i < MAX_DCC_MESSAGE_LEN; i++) {
 		if (lastmsg[i] != Msg->Data[i]) nieuw = false;
 	}
 	if (nieuw)return;
-
+	//databytes uit de library opslaan in tijdelijk geheugen
 	for (byte i; i < 6; i++) {
 		data[i] = Msg->Data[i];
 	}
+	//verdelen op soort msg op basis van 1e byte
 	byte db;  byte bte;  int adr = 0; byte reg = 0;
-	//Filters
 	db = data[0];
 	if (db == 0) {	//broadcast voor alle decoder bedoeld
 	}
@@ -689,10 +677,10 @@ void changed(byte b) {
 	Debug_bfr(false, b); //print buffer inhoud
 }
 byte FreeBfr() {
-	//Hier kan zeker nog aan gewerkt worden voor een zoo slim mogelijke keuze van een vrije buffer	
-	//oude niet actieve accesoire(bit6 van reg)  of CV(bit3 van reg) buffer
+
 	for (byte b = 0; b < Bsize; b++) {
 		if (~bfr[b].reg & (1 << 7)) {
+			if (bfr[b].reg == 0x00) return b;
 			if (bfr[b].reg & (1 << 6))return b;
 			if (bfr[b].reg & (1 << 3)) return b;
 		}
@@ -765,13 +753,6 @@ void Write_AccCV(int adr) {
 	//Serial.println("accCV");
 }
 void Write_Acc(int adr, byte reg) { //called from 'notifyDccMsg()'
-	//verwerkt nieuw 'basic accessory decoder packet (artikel)
-	//als preset[].reg bit0 true is de aan en de uit msg beide opslaan en verwerken.
-	//Tijd opslaan in millis() , verschil geeft pulsduur getoont in de Off msg 
-	//bij  bit0 false, alleen de On msg verwerken, opslaan en tonen, simpeler dus
-	//kijken of msg nieuw is.	
-	//Serial.print("*");
-
 	byte Treg = reg; byte buffer;
 	bool nieuw = true; Treg |= (1 << 7);
 	for (byte i = 0; i < Bsize; i++) {
@@ -794,44 +775,94 @@ void Write_Acc(int adr, byte reg) { //called from 'notifyDccMsg()'
 	Debug_bfr(false, buffer);
 }
 //IO alles met de uitvoer van de ontvangen msg. periodiek of manual
-void IO_exe() {
+void IO_exe() { //toont een buffer, called manual, time, or direct from loop.
 	bool read = true; byte count = 0;
-	//ervoor zorgen dat alle buffers in volgorde worden gelezen, dus Bcount
-
-//	if (~GPIOR0 & (1 << 0)) return; //stoppen als er geen te verwerken msg zijn.
-
 	while (read) {
-		//Serial.print("|");
-		//zolang read =true herhalen, volgorde belangrijk
-		//deze constructie omdat er meerdere redenen zijn waarom
-		//deze buffer niet kan worden getoond. 
-		read = IO_dp(); //dp=displays msg 
+		if (bfr[Bcount].reg & (1 << 7)) read = IO_dp(); //Alleen als bfr[].reg bit7=true
 		Bcount++;
 		if (Bcount == Bsize)Bcount = 0;
 		count++;
-		if (count > Bsize)read = false; //exit als buffer blijft hangen. Misschien een autodelete er op los laten?
+		if (count > Bsize)read = false; //exit als er geen te tonen buffer is gevonden
 	}
-	dp.display();
+	//dp.display();
 }
+
 bool IO_dp() { //displays msg's 
-	if (~bfr[Bcount].reg & (1 << 7))return true; //exit als niet vrij (alleen bij artikelen maken)
+	//venster instelling
+	byte s = 1;
+	byte symbolE1 = 20; //default loc
+	//kolommen
+	byte xE[4]; //0=msg type, symbool 1=adres
+	//rijen
+	byte yR[3]; //rijen
 
-	//GPIOR2 = 0; //clear gpr, flags in functie
+	//Type msg en symbol bepalen
+	if (bfr[Bcount].reg & (1 << 6)) { //accesoire
+		if (preset[Prst].reg & (1 << 0)) { //alleen de 'uit' tonen met pulsduur
+			if (bfr[Bcount].reg & (1 << 0)) return true; //buffer is een 'aan' accessoire, overslaan
+		}
+		//aan/uit mode of een uit msg 
+		if (bfr[Bcount].reg & (1 << 3)) { //accessoire CV msg
+			symbolE1 = 0; //CV
+		}
+		else if (bfr[Bcount].reg & (1 << 1)) { //Accessoire afslaan
+			symbolE1 = 1;
+		}
+		else { //Accessoire Rechtdoor
+			symbolE1 = 2;
+		}
+	}
+	//scherm type instellen apart of een lijst
+	if (preset[Prst].reg & (1 << 1)) { //lijst
+		scrolldown();
+		xE[0] = 0; xE[1] = 24;
+		yR[0] = 0;
+	}
+	else { //single msg
+		DP_single();
+		s = 2; //Size objecten
+		xE[0] = 5; xE[1] = 40;
+		yR[0] = 5;
+	}
 
-	//dp.setTextColor(WHITE);
+
+
+	//Display element 1 symbool loc of accessoire
+	DP_symbol(xE[0], yR[0], symbolE1, s);
+	setText(xE[1], yR[0], s);
+	dp.print(bfr[Bcount].adres);
+
+
+	/*
+	//if (~bfr[Bcount].reg & (1 << 7))return true; //exit als niet vrij (alleen bij artikelen maken)
 	//******Locomotief
 	if (~bfr[Bcount].reg & (1 << 6)) { //Locomotief
 		return IO_DP_loc();
 	}
-	else {//*********//Accesoire	artikel
+	else {//Accesoire	artikel
 		//Tonen msg van accessoire werkt 10sept
 		return IO_DP_art();
 	}
+	*/
+
+	//tonen
+
+
+
+	//afsluiting
+
+	bfr[Bcount].reg &= ~(1 << 7); // buffer vrijgeven
+	dp.display();
+	return false;
 }
+
+
 bool IO_DP_art() {
+
 	if (preset[Prst].reg & (1 << 0)) { //alleen de 'uit' tonen voor leesbaarheid
 		if (bfr[Bcount].reg & (1 << 0)) return true; //alleen 'uit' msg verwerken
 	}
+
 	GPIOR2 = 0; //reset gpr
 	unsigned int puls = 0; byte r = 0; byte d = 0;
 
@@ -849,6 +880,8 @@ bool IO_DP_art() {
 	else {
 		if (bfr[Bcount].reg & (1 << 0)) GPIOR2 |= (1 << 0); //zet flag POWEROUT=on		
 	}
+
+
 	//type msg bepalen
 	if (bfr[Bcount].reg & (1 << 2)) { //CV msg
 		d = 0;
@@ -864,46 +897,47 @@ bool IO_DP_art() {
 
 	if (preset[Prst].reg & (1 << 1)) { //toon lijst
 		scrolldown(); //bovenste regel vrijmaken
-		Symbol(0, 0, d, 1); //teken symbool d (0=wissel cv, 1=wissel R, 2=wissel A)	
-		Text(22, 0, 1, bfr[Bcount].adres, 0); //waarde adres, geen tekst
+		DP_symbol(0, 0, d, 1); //teken symbool d (0=wissel cv, 1=wissel R, 2=wissel A)	
+		//Text(22, 0, 1, bfr[Bcount].adres, 0); //waarde adres, geen tekst
 		if (d > 0) { //not(yet) in CV
 			if (preset[Prst].reg & (1 << 0)) { //alleen uit msg tonen
-				Symbol(49, 0, 10, 1); //symbool 10 puls
-				Text(57, 0, 1, puls, 12); //puls met txt12 "ms"
+				DP_symbol(49, 0, 10, 1); //symbool 10 puls
+				//Text(57, 0, 1, puls, 12); //puls met txt12 "ms"
 			}
 			else { //aan en uit msg tonen
 				if (GPIOR2 & (1 << 0)) t = 10;
-				Text(57, 0, 1, 0, t);
+				//Text(57, 0, 1, 0, t);
 			}
 		}
 	}
 	else { //toon enkel
-		DP_mon(); //clears bovendeel display
-		Symbol(3, 0, d, 2);
-		Text(42, 0, 2, bfr[Bcount].adres, 0);
+		DP_single(); //clears bovendeel display
+		DP_symbol(3, 0, d, 2);
+		DP_symbol(3, 0, d, 2);
+		//Text(42, 0, 2, bfr[Bcount].adres, 0);
 		if (d > 0) { //not in CV
 			if (preset[Prst].reg & (1 << 0)) { //Alleen uit msg
-				Symbol(13, 24, 10, 2);
-				Text(30, 24, 2, puls, 12);
+				DP_symbol(13, 24, 10, 2);
+				//Text(30, 24, 2, puls, 12);
 			}
 			else { //aan en uit tonen				
 				if (GPIOR2 & (1 << 0)) t = 10;
-				Text(30, 24, 2, 0, t);
+				//Text(30, 24, 2, 0, t);
 			}
 		}
 	}
 	bfr[Bcount].reg &= ~(1 << 7); // buffer vrijgeven
 	return false; //dus msg verwerkt
 }
-void Symbol(byte x, byte y, byte number, byte s) {
+void DP_symbol(byte x, byte y, byte number, byte s) {
 	switch (number) {
-	case 0:
+	case 0: //cv accessoire
 		drawWissel(x, y, s, 0);
 		break;
-	case 1: //wissel L
+	case 1: // Accessoire Afslaan
 		drawWissel(x, y, s, 1);
 		break;
-	case 2: //wissel R
+	case 2: //Accessoire Rechtdoor
 		drawWissel(x, y, s, 2);
 		break;
 	case 10: //puls
@@ -914,12 +948,10 @@ void Symbol(byte x, byte y, byte number, byte s) {
 		break;
 	}
 }
-void Text(byte x, byte y, byte s, unsigned int value, byte TXTnummer) {
+void setText(byte x, byte y, byte s) {
 	dp.setTextSize(s);
 	dp.setTextColor(1);
 	dp.setCursor(x, y);
-	if (value > 0) dp.print(value);
-	TXT(TXTnummer);
 }
 bool IO_DP_loc() {
 	byte x; byte y; byte s;
@@ -935,13 +967,13 @@ bool IO_DP_loc() {
 		y2 = 0;
 	}
 	else { //apart
-		DP_mon(); //venster vrijmaken
+		DP_single(); //venster vrijmaken
 		x = 3; y = 2; s = 2; x2 = 49; x3 = 13; y2 = 24;
 	}
 
 	//start display
-	Symbol(x, y, 20, s); //teken symbool d (0=wissel cv, 1=wissel R, 2=wissel A)	
-	Text(x2, y, s, bfr[Bcount].adres, 0); //waarde adres, geen tekst
+	DP_symbol(x, y, 20, s); //teken symbool d (0=wissel cv, 1=wissel R, 2=wissel A)	
+	//Text(x2, y, s, bfr[Bcount].adres, 0); //waarde adres, geen tekst
 
 	//soort msg
 	if (bfr[Bcount].reg & (1 << 2)) { //drive
@@ -961,7 +993,7 @@ bool IO_DP_loc() {
 		else { //reversed
 			dt = 16;
 		}
-		Text(x3, y2, s, speed, dt);
+		//Text(x3, y2, s, speed, dt);
 	}
 
 	bfr[Bcount].reg &= ~(1 << 7); // buffer vrijgeven
@@ -971,12 +1003,14 @@ void scrolldown() {
 	//blok van 50 bovenste lijnen 10 (regelhoogte nog uitzoeken) naar beneden plaatsen
 	//regel voor regel onderste regel y=40~y=49 zwart maken
 	//blijft dus 15pixels over nu aan onderkant
-	for (byte y = 40; y < 50; y++) {
-		for (byte x = 0; x < 128; x++) {
+
+	for (byte y = 55; y < 65; y++) {
+		for (byte x = 0; x < 129; x++) {
 			dp.drawPixel(x, y, BLACK);
 		}
 	}
-	for (byte y = 39; y < 255; y--) {
+
+	for (byte y = 54; y < 255; y--) {
 		for (byte x = 0; x < 128; x++) {
 			if (dp.getPixel(x, y)) {
 				dp.drawPixel(x, y, BLACK);
@@ -990,6 +1024,19 @@ void scrolldown() {
 	dp.display();
 }
 void drawLoc(byte x, byte y, byte s) {
+	//tekend loc icon
+	dp.fillRect(s*(x + 1), y, s * 5, s * 1, 1);//dak
+	dp.fillRect(s*(x + 4), (y + 2*s), s * 8, s * 3, 1); //ketel
+	dp.fillRect(s*(x + 10), y, s * 1, s * 2, 1); //schoorsteen
+	dp.fillRect(s*(x + 5), (y + 1*s), s * 1, s * 1, 1); //raam
+	dp.fillRect(s*x, (y + 3*s), s * 2, s * 1, 1); //bok
+	dp.fillRect(s*x, (y + 4*s), s * 4, s * 1, 1); //vloer
+	dp.fillRect(s*(x + 1), (y + 5*s), s * 5, s * 1, 1); //onderstel
+	dp.fillRect(s*(x + 7), (y + 5*s), s * 5, s * 1, 1); //onderstel voor
+	dp.fillRect(s*(x + 2), (y + 6*s), s * 3, s * 1, 1); //wiel
+	dp.fillRect(s*(x + 8), (y + 6*s), s * 3, s * 1, 1); //wiel voor
+}
+void drawLocold(byte x, byte y, byte s) {
 	//tekend loc icon
 	dp.fillRect(s*(x + 1), s*y, s * 5, s * 1, 1);//dak
 	dp.fillRect(s*(x + 4), s*(y + 2), s * 8, s * 3, 1); //ketel

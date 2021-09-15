@@ -18,7 +18,7 @@ zie struct buffers{}
 
 MEM_reg instellingen die opgeslagen in EEPROM
 bit0  Toon aan en uit, false toon alleen uit de pulsduur dus NA de uit msg, true (default)
-bit1	True:Toon lijst van 5 msg onder elkaar, of false: 1 grote msg.
+bit1	True:Toon lijst, false: 1 grote msg.
 bit2	True: Toon output as converter AAAACDDP A=adres C=on/off DD=channel 0~3 P=poort R of A
 
 
@@ -42,3 +42,4 @@ symbols
 1 wissel L
 2 wissel R
 10 Puls 
+20 loc
