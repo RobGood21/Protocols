@@ -13,9 +13,6 @@ bfr[].reg (register van een msg buffer)
 zie struct buffers{}
 
 
-
-
-
 MEM_reg instellingen die opgeslagen in EEPROM
 bit0  Toon aan en uit, false toon alleen uit de pulsduur dus NA de uit msg, true (default)
 bit1	True:Toon lijst, false: 1 grote msg.

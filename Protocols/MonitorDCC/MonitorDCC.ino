@@ -38,7 +38,7 @@ NmraDcc  Dcc;
 struct presets {
 	byte reg;
 	//bit0 True: Toon aan en uit msg, false: toon alleen uit met pulsduur
-	//bit1	True : Toon lijst van 5 msg onder elkaar, of false : 1 grote msg.
+	//bit1	True : Toon lijst onder elkaar, of false : 1 grote msg.
 	//bit2	
 	byte filter; //welke msg verwerken, true is verwerken, false is overslaan
 	//bit0 //loc
@@ -789,71 +789,158 @@ void IO_exe() { //toont een buffer, called manual, time, or direct from loop.
 
 bool IO_dp() { //displays msg's 
 	//venster instelling
-	byte s = 1;
-	byte symbolE1 = 20; //default loc
+	byte s = 1; byte speed; bool drive = false;
+	byte symbolE[4]; symbolE[0] = 20; //default loc
 	//kolommen
-	byte xE[4]; //0=msg type, symbool 1=adres
+	byte xE[5]; //afstanden horizontaal begin
 	//rijen
-	byte yR[3]; //rijen
+	byte yR[3]; //rijen 
 
 	//Type msg en symbol bepalen
 	if (bfr[Bcount].reg & (1 << 6)) { //accesoire
-		if (preset[Prst].reg & (1 << 0)) { //alleen de 'uit' tonen met pulsduur
-			if (bfr[Bcount].reg & (1 << 0)) return true; //buffer is een 'aan' accessoire, overslaan
-		}
+		//puls mode iets anders voor verzinnen
+		//if (preset[Prst].reg & (1 << 0)) { //alleen de 'uit' tonen met pulsduur
+		//	if (bfr[Bcount].reg & (1 << 0)) return true; //buffer is een 'aan' accessoire, overslaan
+		//}		
+
 		//aan/uit mode of een uit msg 
 		if (bfr[Bcount].reg & (1 << 3)) { //accessoire CV msg
-			symbolE1 = 0; //CV
+			symbolE[0] = 0; //CV
 		}
 		else if (bfr[Bcount].reg & (1 << 1)) { //Accessoire afslaan
-			symbolE1 = 1;
+			symbolE[0] = 1;
 		}
 		else { //Accessoire Rechtdoor
-			symbolE1 = 2;
+			symbolE[0] = 2;
 		}
 	}
+	else { //locomotief
+		if (bfr[Bcount].reg & (1 << 3)) { //CV instelling
+
+		}
+		else { //drive aanpassing 
+			drive = true;
+			if (bfr[Bcount].instructie & (1 << 5)) {
+				symbolE[1] = 21;
+			}
+			else {
+				symbolE[1] = 22;
+			}
+
+			//snelheidsstap bepalen, altijd denkend CV#29 bit1=true 28snelheidsstappen.
+			//Xtra digitale snelheidstrap 128stappen nog niet 16sept2021
+			GPIOR2 = bfr[Bcount].instructie << 4;
+			GPIOR2 = GPIOR2 >> 4; //clear bit 7,6,5,4
+			if (GPIOR2 > 1) {
+				speed = (GPIOR2 - 1) * 2;
+			}
+			if (~bfr[Bcount].instructie & (1 << 4)) speed--;
+		}
+	}
+
 	//scherm type instellen apart of een lijst
 	if (preset[Prst].reg & (1 << 1)) { //lijst
 		scrolldown();
-		xE[0] = 0; xE[1] = 24;
-		yR[0] = 0;
+		xE[0] = 0; xE[1] = 15; xE[2] = 40; xE[3] = 52; xE[4] = 70;
+		yR[0] = 0; yR[1] = 0;
 	}
 	else { //single msg
 		DP_single();
 		s = 2; //Size objecten
-		xE[0] = 5; xE[1] = 40;
-		yR[0] = 5;
+		xE[0] = 5; xE[1] = 40; xE[2] = 5; xE[3] = 30; xE[4] = 50;
+		yR[0] = 5; yR[1] = 25; yR[2] = 45;
 	}
 
 
-
-	//Display element 1 symbool loc of accessoire
-	DP_symbol(xE[0], yR[0], symbolE1, s);
+	//Display
+	DP_symbol(xE[0], yR[0], symbolE[0], s);
 	setText(xE[1], yR[0], s);
 	dp.print(bfr[Bcount].adres);
-
-
-	/*
-	//if (~bfr[Bcount].reg & (1 << 7))return true; //exit als niet vrij (alleen bij artikelen maken)
-	//******Locomotief
-	if (~bfr[Bcount].reg & (1 << 6)) { //Locomotief
-		return IO_DP_loc();
+	DP_symbol(xE[2], yR[1], symbolE[1], s);
+	if (drive) {
+		setText(xE[3], yR[1], s);
+		dp.print(speed);
+		if (preset[Prst].filter & (1 << 2)) { //Functions tonen
+			//verschil tussen lijst en single, lijst alleen FL, single alle functions (alle 28 dus)
+			if (preset[Prst].reg & (1 << 1)) { //lijst
+				if (bfr[Bcount].db[0] & (1 << 4)) {
+					//setText(xE[4], yR[1], 1);
+					//dp.print("Fl");
+					dp.fillCircle(xE[4], yR[1] + 3, 3, 1); //Veel Program ruimte nodig,letters kleiner 
+				}
+			}
+			else { //single
+				functions(xE[0], yR[2]);
+			}
+		}
 	}
-	else {//Accesoire	artikel
-		//Tonen msg van accessoire werkt 10sept
-		return IO_DP_art();
-	}
-	*/
 
-	//tonen
 
 
 
 	//afsluiting
-
 	bfr[Bcount].reg &= ~(1 << 7); // buffer vrijgeven
 	dp.display();
 	return false;
+}
+
+void functions(byte x, byte y) {
+	
+	for (byte i = 0; i < 13; i++) {
+		if (Fmap(i)) {
+			dp.fillRect(x, y, 4, 15, 1);
+		}
+		else {
+			dp.drawLine(x, y + 15, x + 4, y + 15, 1);
+		}
+		x = x + 6;
+	}
+}
+bool Fmap(byte positie) {
+	//mapping van de functions positie in de rij van bits
+	bool onoff;
+	switch (positie) {
+	case 0:
+		onoff = bfr[Bcount].db[0] & (1 << 4);
+		break;
+	case 1:
+		onoff = bfr[Bcount].db[0] & (1 << 0);
+		break;
+	case 2:
+		onoff = bfr[Bcount].db[0] & (1 << 1);
+		break;
+	case 3:
+		onoff = bfr[Bcount].db[0] & (1 << 2);
+		break;
+	case 4:
+		onoff = bfr[Bcount].db[0] & (1 << 3);
+		break;
+	case 5:
+		onoff = bfr[Bcount].db[1] & (1 << 7);
+		break;
+	case 6:
+		onoff = bfr[Bcount].db[1] & (1 << 6);
+		break;
+	case 7:
+		onoff = bfr[Bcount].db[1] & (1 << 5);
+		break;
+	case 8:
+		onoff = bfr[Bcount].db[1] & (1 << 4);
+		break;
+	case 9:
+		onoff = bfr[Bcount].db[1] & (1 << 3);
+		break;
+	case 10:
+		onoff = bfr[Bcount].db[1] & (1 << 2);
+		break;
+	case 11:
+		onoff = bfr[Bcount].db[1] & (1 << 1);
+		break;
+	case 12:
+		onoff = bfr[Bcount].db[0] & (1 << 0);
+		break;
+	}
+	return onoff;
 }
 
 
@@ -946,6 +1033,16 @@ void DP_symbol(byte x, byte y, byte number, byte s) {
 	case 20: //Loc
 		drawLoc(x, y, s); //teken een loc
 		break;
+	case 21: //loc forward
+		//triangels gebuiken veel program size !!! misschien kleiner te maken?
+		dp.drawTriangle(x, y + 3 * s, x + 4 * s, y, x + 4 * s, y + 6 * s, 1);
+		dp.fillTriangle(x + 10 * s, y + 3 * s, x + 6 * s, y, x + 6 * s, y + 6 * s, 1);
+		break;
+	case 22: //loc reversed
+		dp.fillTriangle(x, y + 3 * s, x + 4 * s, y, x + 4 * s, y + 6 * s, 1);
+		dp.drawTriangle(x + 10 * s, y + 3 * s, x + 6 * s, y, x + 6 * s, y + 6 * s, 1);
+		break;
+
 	}
 }
 void setText(byte x, byte y, byte s) {
@@ -953,52 +1050,7 @@ void setText(byte x, byte y, byte s) {
 	dp.setTextColor(1);
 	dp.setCursor(x, y);
 }
-bool IO_DP_loc() {
-	byte x; byte y; byte s;
-	byte x2; byte x3;
-	byte y2;
-	byte speed = 0;
-	byte temp; byte dt;
-	// start display 
-	if (preset[Prst].reg & (1 << 1)) { //lijst
-		scrolldown(); //bovenste regel vrijmaken
-		x = 0; y = 0; s = 1;
-		x2 = 22; x3 = 49;
-		y2 = 0;
-	}
-	else { //apart
-		DP_single(); //venster vrijmaken
-		x = 3; y = 2; s = 2; x2 = 49; x3 = 13; y2 = 24;
-	}
 
-	//start display
-	DP_symbol(x, y, 20, s); //teken symbool d (0=wissel cv, 1=wissel R, 2=wissel A)	
-	//Text(x2, y, s, bfr[Bcount].adres, 0); //waarde adres, geen tekst
-
-	//soort msg
-	if (bfr[Bcount].reg & (1 << 2)) { //drive
-		//snelheid uitgaande CV29 bit1= true 28steps
-		temp = bfr[Bcount].instructie << 4;
-		temp = temp >> 4; //clear bit 7,6,5,4
-		if (temp > 1) {
-			speed = (temp - 1) * 2;
-		}
-		if (~bfr[Bcount].instructie & (1 << 4))speed--;
-
-		// dir 
-		temp = bfr[Bcount].instructie >> 5;
-		if (temp == 3) { //forward
-			dt = 15;
-		}
-		else { //reversed
-			dt = 16;
-		}
-		//Text(x3, y2, s, speed, dt);
-	}
-
-	bfr[Bcount].reg &= ~(1 << 7); // buffer vrijgeven
-	return true;
-}
 void scrolldown() {
 	//blok van 50 bovenste lijnen 10 (regelhoogte nog uitzoeken) naar beneden plaatsen
 	//regel voor regel onderste regel y=40~y=49 zwart maken
@@ -1025,29 +1077,16 @@ void scrolldown() {
 }
 void drawLoc(byte x, byte y, byte s) {
 	//tekend loc icon
-	dp.fillRect(s*(x + 1), y, s * 5, s * 1, 1);//dak
-	dp.fillRect(s*(x + 4), (y + 2*s), s * 8, s * 3, 1); //ketel
-	dp.fillRect(s*(x + 10), y, s * 1, s * 2, 1); //schoorsteen
-	dp.fillRect(s*(x + 5), (y + 1*s), s * 1, s * 1, 1); //raam
-	dp.fillRect(s*x, (y + 3*s), s * 2, s * 1, 1); //bok
-	dp.fillRect(s*x, (y + 4*s), s * 4, s * 1, 1); //vloer
-	dp.fillRect(s*(x + 1), (y + 5*s), s * 5, s * 1, 1); //onderstel
-	dp.fillRect(s*(x + 7), (y + 5*s), s * 5, s * 1, 1); //onderstel voor
-	dp.fillRect(s*(x + 2), (y + 6*s), s * 3, s * 1, 1); //wiel
-	dp.fillRect(s*(x + 8), (y + 6*s), s * 3, s * 1, 1); //wiel voor
-}
-void drawLocold(byte x, byte y, byte s) {
-	//tekend loc icon
-	dp.fillRect(s*(x + 1), s*y, s * 5, s * 1, 1);//dak
-	dp.fillRect(s*(x + 4), s*(y + 2), s * 8, s * 3, 1); //ketel
-	dp.fillRect(s*(x + 10), s*y, s * 1, s * 2, 1); //schoorsteen
-	dp.fillRect(s*(x + 5), s*(y + 1), s * 1, s * 1, 1); //raam
-	dp.fillRect(s*x, s*(y + 3), s * 2, s * 1, 1); //bok
-	dp.fillRect(s*x, s*(y + 4), s * 4, s * 1, 1); //vloer
-	dp.fillRect(s*(x + 1), s*(y + 5), s * 5, s * 1, 1); //onderstel
-	dp.fillRect(s*(x + 7), s*(y + 5), s * 5, s * 1, 1); //onderstel voor
-	dp.fillRect(s*(x + 2), s*(y + 6), s * 3, s * 1, 1); //wiel
-	dp.fillRect(s*(x + 8), s*(y + 6), s * 3, s * 1, 1); //wiel voor
+	dp.fillRect(x + s * 1, y, s * 5, s * 1, 1);//dak
+	dp.fillRect(x + s * 4, (y + 2 * s), s * 8, s * 3, 1); //ketel
+	dp.fillRect(x + s * 10, y, s * 1, s * 2, 1); //schoorsteen
+	dp.fillRect(x + 5 * s, (y + 1 * s), s * 1, s * 1, 1); //raam
+	dp.fillRect(x, (y + 3 * s), s * 2, s * 1, 1); //bok
+	dp.fillRect(x, (y + 4 * s), s * 4, s * 1, 1); //vloer
+	dp.fillRect(x + 1 * s, (y + 5 * s), s * 5, s * 1, 1); //onderstel
+	dp.fillRect(x + 7 * s, (y + 5 * s), s * 5, s * 1, 1); //onderstel voor
+	dp.fillRect(x + 2 * s, (y + 6 * s), s * 3, s * 1, 1); //wiel
+	dp.fillRect(x + 8 * s, (y + 6 * s), s * 3, s * 1, 1); //wiel voor
 }
 void drawWissel(byte x, byte y, byte s, byte t) { //t=0 CV; t=1 rechtdoor t=2 afslaand
 	switch (t) {
