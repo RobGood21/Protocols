@@ -718,7 +718,7 @@ void clearBuffer(byte buffer) {
 	bfr[buffer].tijd = 0;
 	bfr[buffer].db[0] = 0;
 	bfr[buffer].db[1] = 0;
-	bfr[buffer].db[2] = 0;
+	//bfr[buffer].db[2] = 0;
 }
 void Debug_bfr(bool n, byte buffer) {
 	/*
@@ -744,7 +744,7 @@ void Write_AccCV(int adr) {
 
 	bfr[buffer].adres = adr;
 	bfr[buffer].reg = B11001000, //bit7 active bit6 accessoire bit 3 CV msg
-		bfr[buffer].instructie = data[1];
+	bfr[buffer].instructie = data[1];
 	bfr[buffer].db[0] = data[2];
 	bfr[buffer].db[1] = data[3];
 	bfr[buffer].db[2] = data[4];
@@ -766,7 +766,6 @@ void Write_Acc(int adr, byte reg) { //called from 'notifyDccMsg()'
 		buffer = FreeBfr();
 		if (buffer == Bsize)return; //uitspringen geen vrije buffer gevonden
 		clearBuffer(buffer);
-
 		bfr[buffer].adres = adr;
 		bfr[buffer].reg = reg;
 		bfr[buffer].tijd = millis();
@@ -789,12 +788,14 @@ void IO_exe() { //toont een buffer, called manual, time, or direct from loop.
 
 bool IO_dp() { //displays msg's 
 	//venster instelling
-	byte s = 1; byte speed; bool drive = false;
+	byte s = 1; byte speed = 0; bool drive = false;
 	byte symbolE[4]; symbolE[0] = 20; //default loc
 	//kolommen
 	byte xE[5]; //afstanden horizontaal begin
 	//rijen
 	byte yR[3]; //rijen 
+	int CVadres; byte CVvalue;
+
 
 	//Type msg en symbol bepalen
 	if (bfr[Bcount].reg & (1 << 6)) { //accesoire
@@ -815,18 +816,20 @@ bool IO_dp() { //displays msg's
 		}
 	}
 	else { //locomotief
-		if (bfr[Bcount].reg & (1 << 3)) { //CV instelling
 
+		drive = true;
+		if (bfr[Bcount].reg & (1 << 3)) { //CV instelling
+			//cv  berekenen
+			CVadres = bfr[Bcount].db[0];
+			CVvalue = bfr[Bcount].db[1];
 		}
-		else { //drive aanpassing 
-			drive = true;
+		else { //drive aanpassing 			
 			if (bfr[Bcount].instructie & (1 << 5)) {
 				symbolE[1] = 21;
 			}
 			else {
 				symbolE[1] = 22;
 			}
-
 			//snelheidsstap bepalen, altijd denkend CV#29 bit1=true 28snelheidsstappen.
 			//Xtra digitale snelheidstrap 128stappen nog niet 16sept2021
 			GPIOR2 = bfr[Bcount].instructie << 4;
@@ -835,6 +838,7 @@ bool IO_dp() { //displays msg's
 				speed = (GPIOR2 - 1) * 2;
 			}
 			if (~bfr[Bcount].instructie & (1 << 4)) speed--;
+
 		}
 	}
 
@@ -848,24 +852,26 @@ bool IO_dp() { //displays msg's
 		DP_single();
 		s = 2; //Size objecten
 		xE[0] = 5; xE[1] = 40; xE[2] = 5; xE[3] = 30; xE[4] = 50;
-		yR[0] = 5; yR[1] = 25; yR[2] = 45;
+		yR[0] = 5; yR[1] = 25; yR[2] = 50;
 	}
-
-
 	//Display
 	DP_symbol(xE[0], yR[0], symbolE[0], s);
 	setText(xE[1], yR[0], s);
-	dp.print(bfr[Bcount].adres);
-	DP_symbol(xE[2], yR[1], symbolE[1], s);
-	if (drive) {
+	dp.print(bfr[Bcount].adres); //adres
+
+	
+	if (bfr[Bcount].reg & (1 << 3)) { //CV
+		setText(xE[2], yR[1], s);
+		dp.print("CV#"); dp.print(CVadres); dp.print(" "); dp.print(CVvalue);
+	}
+	else if (drive) { //niet CV, wel locomotief
+		DP_symbol(xE[2], yR[1], symbolE[1], s); //symbool accessoire aan/uit  loc forward/reverse
 		setText(xE[3], yR[1], s);
 		dp.print(speed);
 		if (preset[Prst].filter & (1 << 2)) { //Functions tonen
 			//verschil tussen lijst en single, lijst alleen FL, single alle functions (alle 28 dus)
 			if (preset[Prst].reg & (1 << 1)) { //lijst
 				if (bfr[Bcount].db[0] & (1 << 4)) {
-					//setText(xE[4], yR[1], 1);
-					//dp.print("Fl");
 					dp.fillCircle(xE[4], yR[1] + 3, 3, 1); //Veel Program ruimte nodig,letters kleiner 
 				}
 			}
@@ -875,9 +881,6 @@ bool IO_dp() { //displays msg's
 		}
 	}
 
-
-
-
 	//afsluiting
 	bfr[Bcount].reg &= ~(1 << 7); // buffer vrijgeven
 	dp.display();
@@ -885,15 +888,19 @@ bool IO_dp() { //displays msg's
 }
 
 void functions(byte x, byte y) {
-	
+	byte z = 12;
 	for (byte i = 0; i < 13; i++) {
 		if (Fmap(i)) {
-			dp.fillRect(x, y, 4, 15, 1);
+			dp.fillRect(x, y, 4, z, 1);
 		}
 		else {
-			dp.drawLine(x, y + 15, x + 4, y + 15, 1);
+			dp.drawLine(x, y + 12, x + 4, y + 12, 1);
 		}
-		x = x + 6;
+		if (i == 0) {
+			x += 6;
+		}
+		if (i == 4 || i == 8)x += 4;
+		x += 6;
 	}
 }
 bool Fmap(byte positie) {
@@ -916,28 +923,28 @@ bool Fmap(byte positie) {
 		onoff = bfr[Bcount].db[0] & (1 << 3);
 		break;
 	case 5:
-		onoff = bfr[Bcount].db[1] & (1 << 7);
+		onoff = bfr[Bcount].db[1] & (1 << 0);
 		break;
 	case 6:
-		onoff = bfr[Bcount].db[1] & (1 << 6);
-		break;
-	case 7:
-		onoff = bfr[Bcount].db[1] & (1 << 5);
-		break;
-	case 8:
-		onoff = bfr[Bcount].db[1] & (1 << 4);
-		break;
-	case 9:
-		onoff = bfr[Bcount].db[1] & (1 << 3);
-		break;
-	case 10:
-		onoff = bfr[Bcount].db[1] & (1 << 2);
-		break;
-	case 11:
 		onoff = bfr[Bcount].db[1] & (1 << 1);
 		break;
+	case 7:
+		onoff = bfr[Bcount].db[1] & (1 << 2);
+		break;
+	case 8:
+		onoff = bfr[Bcount].db[1] & (1 << 3);
+		break;
+	case 9:
+		onoff = bfr[Bcount].db[1] & (1 << 4);
+		break;
+	case 10:
+		onoff = bfr[Bcount].db[1] & (1 << 5);
+		break;
+	case 11:
+		onoff = bfr[Bcount].db[1] & (1 << 6);
+		break;
 	case 12:
-		onoff = bfr[Bcount].db[0] & (1 << 0);
+		onoff = bfr[Bcount].db[1] & (1 << 7);
 		break;
 	}
 	return onoff;
