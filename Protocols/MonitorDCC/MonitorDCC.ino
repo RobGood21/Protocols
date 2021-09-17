@@ -46,7 +46,7 @@ struct presets {
 	//bit2 //functions 'F'
 	//bit3 //CV  'CV'
 	//bit4 //artikel 
-	//bit5 //switching '<>'
+	//bit5 //toon alleen 'AAN'
 	//bit6 //CV 'CV'
 	//bit7
 };
@@ -481,12 +481,16 @@ void notifyDccMsg(DCC_MSG * Msg) {
 		if (bte & (1 << 3))reg |= (1 << 0); //onoff
 		if (bte & (1 << 0))reg |= (1 << 1);//false=rechtdoor, true = afslaan
 		reg |= (1 << 6); //accessoire
-		if (data[3] > 0) {
-			reg |= (1 << 2);  //("CV");
+
+
+
+		if ((data[2] >> 2) == B111011) { //kan niet is nu checksum
+			reg |= (1 << 3);  //("CV");
 			Write_AccCV(adr);
 		}
 		else {
-			Write_Acc(adr, reg); // accessoire msg ontvangen				
+			//als switch filter is false alleen 'AAN' msg doorlaten
+			if(preset[Prst].filter & (1<<5) || reg & (1<<0)) Write_Acc(adr, reg); // accessoire msg ontvangen				
 		}
 	}
 	else if (db < 232) {
@@ -713,12 +717,13 @@ void Write_Loc() { //adres en instructiebyte
 	Debug_bfr(true, free);
 }
 void clearBuffer(byte buffer) {
+	bfr[buffer].reg = 0;
 	bfr[buffer].adres = 0;
 	bfr[buffer].instructie = 0;
 	bfr[buffer].tijd = 0;
 	bfr[buffer].db[0] = 0;
 	bfr[buffer].db[1] = 0;
-	//bfr[buffer].db[2] = 0;
+	bfr[buffer].db[2] = 0;
 }
 void Debug_bfr(bool n, byte buffer) {
 	/*
@@ -735,6 +740,9 @@ void Debug_bfr(bool n, byte buffer) {
 	Serial.print("  Tijd:"); Serial.println(bfr[buffer].tijd);
 }
 void Write_AccCV(int adr) {
+
+	Serial.println("cv");
+
 	//schrijft een Accesoire CV in een buffer, deze msg wordt niet herhaald dus geen routine nodig
 	//voor uitvangen dubbele
 	//databytes en reg is voldoende 
@@ -744,7 +752,7 @@ void Write_AccCV(int adr) {
 
 	bfr[buffer].adres = adr;
 	bfr[buffer].reg = B11001000, //bit7 active bit6 accessoire bit 3 CV msg
-	bfr[buffer].instructie = data[1];
+		bfr[buffer].instructie = data[1];
 	bfr[buffer].db[0] = data[2];
 	bfr[buffer].db[1] = data[3];
 	bfr[buffer].db[2] = data[4];
@@ -753,6 +761,9 @@ void Write_AccCV(int adr) {
 	//Serial.println("accCV");
 }
 void Write_Acc(int adr, byte reg) { //called from 'notifyDccMsg()'
+
+	///Serial.println("**");
+
 	byte Treg = reg; byte buffer;
 	bool nieuw = true; Treg |= (1 << 7);
 	for (byte i = 0; i < Bsize; i++) {
@@ -788,7 +799,7 @@ void IO_exe() { //toont een buffer, called manual, time, or direct from loop.
 
 bool IO_dp() { //displays msg's 
 	//venster instelling
-	byte s = 1; byte speed = 0; bool drive = false;
+	byte s = 1; byte speed = 0; bool drive = false; int puls;
 	byte symbolE[4]; symbolE[0] = 20; //default loc
 	//kolommen
 	byte xE[5]; //afstanden horizontaal begin
@@ -796,17 +807,25 @@ bool IO_dp() { //displays msg's
 	byte yR[3]; //rijen 
 	int CVadres; byte CVvalue;
 
-
 	//Type msg en symbol bepalen
 	if (bfr[Bcount].reg & (1 << 6)) { //accesoire
-		//puls mode iets anders voor verzinnen
-		//if (preset[Prst].reg & (1 << 0)) { //alleen de 'uit' tonen met pulsduur
-		//	if (bfr[Bcount].reg & (1 << 0)) return true; //buffer is een 'aan' accessoire, overslaan
-		//}		
+
+
+		//puls mode
+		if (preset[Prst].filter & (1 << 5)) { //switching mode on
+			if (preset[Prst].reg & (1 << 0)) { //alleen de 'uit' tonen met pulsduur
+				if (bfr[Bcount].reg & (1 << 0)) return true; //buffer is een 'aan' accessoire, overslaan
+			}
+		}
 
 		//aan/uit mode of een uit msg 
 		if (bfr[Bcount].reg & (1 << 3)) { //accessoire CV msg
 			symbolE[0] = 0; //CV
+			//CVadres en value berekenen
+			CVadres = bfr[Bcount].db[1] + 1;
+			if (bfr[Bcount].db[0] & (1 << 0))CVadres += 256;
+			if (bfr[Bcount].db[0] & (1 << 1))CVadres += 512;
+			CVvalue = bfr[Bcount].db[2];
 		}
 		else if (bfr[Bcount].reg & (1 << 1)) { //Accessoire afslaan
 			symbolE[0] = 1;
@@ -816,12 +835,13 @@ bool IO_dp() { //displays msg's
 		}
 	}
 	else { //locomotief
-
 		drive = true;
 		if (bfr[Bcount].reg & (1 << 3)) { //CV instelling
 			//cv  berekenen
-			CVadres = bfr[Bcount].db[0];
+			CVadres = bfr[Bcount].db[0] + 1;
 			CVvalue = bfr[Bcount].db[1];
+			if (bfr[Bcount].instructie & (1 << 0))CVadres += 256;
+			if (bfr[Bcount].instructie & (1 << 1))CVadres += 512;
 		}
 		else { //drive aanpassing 			
 			if (bfr[Bcount].instructie & (1 << 5)) {
@@ -845,38 +865,89 @@ bool IO_dp() { //displays msg's
 	//scherm type instellen apart of een lijst
 	if (preset[Prst].reg & (1 << 1)) { //lijst
 		scrolldown();
-		xE[0] = 0; xE[1] = 15; xE[2] = 40; xE[3] = 52; xE[4] = 70;
-		yR[0] = 0; yR[1] = 0;
+		xE[0] = 0; xE[1] = 15; xE[2] = 40; xE[3] = 52; xE[4] = 85;
+		yR[0] = 0; yR[1] = 0; yR[2] = 0;
 	}
 	else { //single msg
 		DP_single();
 		s = 2; //Size objecten
 		xE[0] = 5; xE[1] = 40; xE[2] = 5; xE[3] = 30; xE[4] = 50;
-		yR[0] = 5; yR[1] = 25; yR[2] = 50;
+		yR[0] = 5; yR[1] = 25; yR[2] = 45;
 	}
+
+
 	//Display
 	DP_symbol(xE[0], yR[0], symbolE[0], s);
 	setText(xE[1], yR[0], s);
 	dp.print(bfr[Bcount].adres); //adres
 
-	
+
 	if (bfr[Bcount].reg & (1 << 3)) { //CV
 		setText(xE[2], yR[1], s);
-		dp.print("CV#"); dp.print(CVadres); dp.print(" "); dp.print(CVvalue);
+		dp.print("CV#"); dp.print(CVadres);
+		setText(xE[4], yR[2], s); dp.print(CVvalue);
+
+		//als in single mode CV value byte binair tonen
+		if (~preset[Prst].reg & (1 << 1)) { //lijst
+			byte x = xE[4]; byte y = yR[2] + 2;
+			byte data = 1; //loc CV
+			if (bfr[Bcount].reg & (1 << 6))data = 2; //acc CV 
+			for (byte i = 7; i < 255; i--) {
+				if (bfr[Bcount].db[data] & (1 << i)) {
+					dp.fillRect(x, y, 4, 12, 1);
+				}
+				else {
+					dp.drawLine(x, y + 11, x + 4, y + 11, 1);
+				}
+				x += 6;
+			}
+		}
 	}
-	else if (drive) { //niet CV, wel locomotief
-		DP_symbol(xE[2], yR[1], symbolE[1], s); //symbool accessoire aan/uit  loc forward/reverse
-		setText(xE[3], yR[1], s);
-		dp.print(speed);
-		if (preset[Prst].filter & (1 << 2)) { //Functions tonen
-			//verschil tussen lijst en single, lijst alleen FL, single alle functions (alle 28 dus)
-			if (preset[Prst].reg & (1 << 1)) { //lijst
-				if (bfr[Bcount].db[0] & (1 << 4)) {
-					dp.fillCircle(xE[4], yR[1] + 3, 3, 1); //Veel Program ruimte nodig,letters kleiner 
+	else { //niet CV
+		if (bfr[Bcount].reg & (1 << 6)) { //accesoire
+
+			//alleen tonen als Switching bit5 in preset filter =true
+			if (preset[Prst].filter & (1 << 5)) {
+				if (preset[Prst].reg & (1 << 0)) { //pulslengte tonen
+					byte change;
+					for (byte i = 0; i < Bsize; i++) {
+						//volgorde belangrijk
+						change = bfr[i].reg ^ bfr[Bcount].reg;// reken maar na klopt...alleen bit0 van .reg = verschillend				
+						if (bfr[i].adres == bfr[Bcount].adres && change == 1) {
+							puls = bfr[Bcount].tijd - bfr[i].tijd;
+							bfr[i].reg &= ~(1 << 7);//buffer vrijgeven
+							i = Bsize; //exit lus
+						}
+					}
+					DP_symbol(xE[2], yR[1], 10, s);
+					setText(xE[3], yR[1], s);
+					dp.print(puls); dp.print("ms");
+				}
+
+				else { //aan en uit msg tonen
+					if (bfr[Bcount].reg & (1 << 0)) {
+						dp.fillRect(xE[2], yR[1], s * 10, s * 7, 1);
+					}
+					else {
+						dp.drawRect(xE[2], yR[1], s * 10, s * 7, 1);
+					}
 				}
 			}
-			else { //single
-				functions(xE[0], yR[2]);
+		}
+		else { //locomotief
+			DP_symbol(xE[2], yR[1], symbolE[1], s); //symbool accessoire aan/uit  loc forward/reverse
+			setText(xE[3], yR[1], s);
+			dp.print(speed);
+			if (preset[Prst].filter & (1 << 2)) { //Functions tonen
+				//verschil tussen lijst en single, lijst alleen FL, single alle functions (alle 28 dus)
+				if (preset[Prst].reg & (1 << 1)) { //lijst
+					if (bfr[Bcount].db[0] & (1 << 4)) {
+						dp.fillCircle(xE[4], yR[1] + 3, 3, 1); //Veel Program ruimte nodig,letters kleiner 
+					}
+				}
+				else { //single
+					functions(xE[0], yR[2]);
+				}
 			}
 		}
 	}
@@ -1132,21 +1203,21 @@ void TXT(byte n) {
 	case 0: //niets
 		dp.print(F(""));
 		break;
-	case 10:
-		dp.print(F("aan"));
-		break;
-	case 11:
-		dp.print(F("uit"));
-		break;
+		//case 10:
+		//	dp.print(F("aan"));
+		//	break;
+		//case 11:
+		//	dp.print(F("uit"));
+		//	break;
 	case 12:
 		dp.print(F("ms"));
 		break;
-	case 15:
-		dp.print(F(">>"));
-		break;
-	case 16:
-		dp.print(F("<<"));
-		break;
+		//case 15:
+		//	dp.print(F(">>"));
+		//	break;
+		//case 16:
+		//	dp.print(F("<<"));
+		//	break;
 	}
 }
 
