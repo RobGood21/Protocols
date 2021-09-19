@@ -73,10 +73,12 @@ struct buffers {
 }; buffers bfr[Bsize]; //aantal buffer artikelen
 
 //variabelen
+
 int T_adres = 0; //tijdelijk adres
 byte T_instructie = 0; //Tijdelijk opslag instructie byte
 byte T_db[2]; //Tijdelijke opslag
 
+byte out[2]; //
 
 byte prgfase;
 byte DP_out = 0x00; //output byte
@@ -140,10 +142,17 @@ void setup() {
 
 	DP_welcome(); //toon opening text
 	delay(500);
-	DP_single();
+	
 	MEM_read();
 	//xtra init
 	GPIOR2 = 0;
+
+	//tijdelijk
+	out[0] = 138; out[1] = 33;
+
+	//displays
+
+DP_monitor();
 }
 void factory() {
 	for (int i = 0; i < EEPROM.length(); i++) {
@@ -173,8 +182,25 @@ void DP_welcome() {
 	dp.print(version);
 	dp.display();
 }
-void DP_single() { //maakt display schoon, voor msg 
+void DP_monitor() { //maakt display schoon, toont output bytes
 	dp.clearDisplay();
+	byte x = 0; byte bte = 0;
+	//onderbalk met 2 plus 4xnibble output bytes
+	for (byte i = 0; i < 16; i++) {
+		if (i > 7)bte = 1;
+
+		if (out[bte] & (1 << i - (bte * 8))) {
+
+			dp.drawRect(x + (i * 7), 57, 6, 7, 1);
+			//dp.fillRect(x+3,60,2,2,1);
+		}
+		else {
+			dp.fillRect(x + (i * 7), 57, 6, 7, 1);
+		}
+
+		if (i == 3 || i == 11)x += 3;
+		if (i == 7)x += 6;
+	}
 	dp.display();
 }
 void loop() {
@@ -190,8 +216,6 @@ void loop() {
 			slowcount = 0;
 			//PORTD &= ~(3 << 3); //set leds off
 		}
-
-
 		SW_exe();
 	}
 }
@@ -231,7 +255,6 @@ void SW_exe() {
 	SW_status = read;
 }
 void SW_on(byte sw) {
-
 	switch (sw) {
 	case 0: //schakelen tussen monitor en programmeren
 		GPIOR0 ^= (1 << 2);
@@ -240,7 +263,7 @@ void SW_on(byte sw) {
 		}
 		else { //monitor tonen
 			MEM_write();
-			DP_single();
+			DP_monitor();
 		}
 		break;
 	case 1:
@@ -264,6 +287,7 @@ void SW_on(byte sw) {
 
 		}
 		break;
+
 	case 3:
 		if (program) {
 			ParaUp();
@@ -295,10 +319,10 @@ void DP_prg() { //iedere keer geheel vernieuwen?
 	byte x[4] = { 0,26,45,68 };
 	dp.clearDisplay();
 	dp.setTextSize(1); dp.setTextColor(1);
+
 	//regel 1
 	dp.setCursor(0, y);
 	dp.print(F("Preset:")); dp.print(Prst + 1);
-
 	if (prgfase == 0) { px = x[0]; py = y + 8; w = x[0] + 47, h = y + 8; }//Cursor preset
 	dp.setCursor(x[3], y);
 	if (preset[Prst].reg & (1 << 1)) { //lijst
@@ -333,15 +357,19 @@ void DP_prg() { //iedere keer geheel vernieuwen?
 	drawWissel(x[0] + 8, y, 1, 0);
 	if (prgfase == 6) { px = x[0]; py = y + 8; w = x[0] + 20; h = y + 8; } //cursor Artikelen
 
-	if (preset[Prst].filter & (1 << 4)) { //alleen als artikel check is true
+	//alleen als artikel check is true
+	if (preset[Prst].filter & (1 << 4)) {
+
 		drawCheck(x[1], y, preset[Prst].filter & (1 << 5));
-		dp.setCursor(x[1] + 8, y); dp.print(F("S")); //Switch msg
-		if (prgfase == 7) { px = x[1]; py = y + 8; w = x[1] + 10; h = y + 8; } //cursor Artikelen switch
-		drawCheck(x[2], y, preset[Prst].filter & (1 << 6));
-		dp.setCursor(x[2] + 8, y); dp.print(F("CV")); //CV
-		if (prgfase == 8) { px = x[2]; py = y + 8; w = x[2] + 16; h = y + 8; } //cursor Artikelen CV
-		drawCheck(x[3], y, preset[Prst].reg & (1 << 0));//drawPuls(x[3] + 8, y, 1);
-		dp.setCursor(x[3] + 8, y); dp.print(F("puls")); //puls of aan/uit		
+		dp.setCursor(x[1] + 8, y); dp.print(F("S")); //Switch msg 
+		if (prgfase == 7) { px = x[1]; py = y + 8; w = x[1] + 12; h = y + 8; } //cursor Artikelen CV
+
+		drawCheck(x[2], y, preset[Prst].reg & (1 << 0)); drawPuls(x[2] + 8, y, 1);
+		dp.setCursor(x[2] + 8, y);// dp.print(F("puls")); //puls of aan/uit	
+		if (prgfase == 8) { px = x[2]; py = y + 8; w = x[2] + 10; h = y + 8; } //cursor Artikelen switch
+
+		drawCheck(x[3], y, preset[Prst].filter & (1 << 6));
+		dp.setCursor(x[3] + 8, y); dp.print(F("CV")); //CV	
 		if (prgfase == 9) { px = x[3]; py = y + 8; w = x[3] + 28; h = y + 8; } //cursor Artikelen CV
 	}
 
@@ -423,10 +451,10 @@ void ParaDown() {
 		preset[Prst].filter ^= (1 << 5); //Tonen Acc switch
 		break;
 	case 8:
-		preset[Prst].filter ^= (1 << 6); //Tonen Acc CV
+		preset[Prst].reg ^= (1 << 0); //Tonen Acc CV
 		break;
 	case 9:
-		preset[Prst].reg ^= (1 << 0); //tonen puls of aan uit msg
+		preset[Prst].filter ^= (1 << 6); //tonen puls of aan uit msg
 		break;
 	case 10:
 		break;
@@ -490,7 +518,7 @@ void notifyDccMsg(DCC_MSG * Msg) {
 		}
 		else {
 			//als switch filter is false alleen 'AAN' msg doorlaten
-			if(preset[Prst].filter & (1<<5) || reg & (1<<0)) Write_Acc(adr, reg); // accessoire msg ontvangen				
+			if (preset[Prst].filter & (1 << 5) || reg & (1 << 0)) Write_Acc(adr, reg); // accessoire msg ontvangen				
 		}
 	}
 	else if (db < 232) {
@@ -608,7 +636,7 @@ void LocMsgCV() {
 	bfr[buffer].db[0] = T_db[0];
 	bfr[buffer].db[1] = T_db[1];
 	bfr[buffer].tijd = millis();
-	Debug_bfr(true, buffer);
+	//Debug_bfr(true, buffer);
 }
 void LocMsg(byte tiep) { //called from loc() 1=drive 2=function 1 3 = function2
 	//000, 001, 110 not on this project V1.01 sept 2021  (misschien wel een melding tonen op display bij zo een msg?)
@@ -678,7 +706,7 @@ void LocMsg(byte tiep) { //called from loc() 1=drive 2=function 1 3 = function2
 void changed(byte b) {
 	bfr[b].tijd = millis();
 	bfr[b].reg |= (1 << 7); //msg weer tonen
-	Debug_bfr(false, b); //print buffer inhoud
+	//Debug_bfr(false, b); //print buffer inhoud
 }
 byte FreeBfr() {
 
@@ -714,7 +742,7 @@ void Write_Loc() { //adres en instructiebyte
 	bfr[free].reg |= (1 << 7); //7=tonen 6=loc(false)
 	bfr[free].reg |= (1 << 2); //type Loc message 2 = drive/functions 3 = CV 
 	bfr[free].tijd = millis();
-	Debug_bfr(true, free);
+	//Debug_bfr(true, free);
 }
 void clearBuffer(byte buffer) {
 	bfr[buffer].reg = 0;
@@ -739,6 +767,7 @@ void Debug_bfr(bool n, byte buffer) {
 	Serial.print(" db2:"); Serial.print(bfr[buffer].db[2], BIN);
 	Serial.print("  Tijd:"); Serial.println(bfr[buffer].tijd);
 }
+
 void Write_AccCV(int adr) {
 
 	Serial.println("cv");
@@ -757,7 +786,7 @@ void Write_AccCV(int adr) {
 	bfr[buffer].db[1] = data[3];
 	bfr[buffer].db[2] = data[4];
 	bfr[buffer].tijd = millis();
-	Debug_bfr(true, buffer);
+	//Debug_bfr(true, buffer);
 	//Serial.println("accCV");
 }
 void Write_Acc(int adr, byte reg) { //called from 'notifyDccMsg()'
@@ -782,7 +811,7 @@ void Write_Acc(int adr, byte reg) { //called from 'notifyDccMsg()'
 		bfr[buffer].tijd = millis();
 		bfr[buffer].reg |= (1 << 7); //set buffer active
 	}
-	Debug_bfr(false, buffer);
+	//Debug_bfr(false, buffer);
 }
 //IO alles met de uitvoer van de ontvangen msg. periodiek of manual
 void IO_exe() { //toont een buffer, called manual, time, or direct from loop.
@@ -796,7 +825,6 @@ void IO_exe() { //toont een buffer, called manual, time, or direct from loop.
 	}
 	//dp.display();
 }
-
 bool IO_dp() { //displays msg's 
 	//venster instelling
 	byte s = 1; byte speed = 0; bool drive = false; int puls;
@@ -858,10 +886,8 @@ bool IO_dp() { //displays msg's
 				speed = (GPIOR2 - 1) * 2;
 			}
 			if (~bfr[Bcount].instructie & (1 << 4)) speed--;
-
 		}
 	}
-
 	//scherm type instellen apart of een lijst
 	if (preset[Prst].reg & (1 << 1)) { //lijst
 		scrolldown();
@@ -869,13 +895,11 @@ bool IO_dp() { //displays msg's
 		yR[0] = 0; yR[1] = 0; yR[2] = 0;
 	}
 	else { //single msg
-		DP_single();
+		DP_monitor();
 		s = 2; //Size objecten
-		xE[0] = 5; xE[1] = 40; xE[2] = 5; xE[3] = 30; xE[4] = 50;
-		yR[0] = 5; yR[1] = 25; yR[2] = 45;
+		xE[0] = 2; xE[1] = 40; xE[2] = 5; xE[3] = 30; xE[4] = 85;
+		yR[0] = 3; yR[1] = 22; yR[2] = 40;
 	}
-
-
 	//Display
 	DP_symbol(xE[0], yR[0], symbolE[0], s);
 	setText(xE[1], yR[0], s);
@@ -884,13 +908,14 @@ bool IO_dp() { //displays msg's
 
 	if (bfr[Bcount].reg & (1 << 3)) { //CV
 		setText(xE[2], yR[1], s);
-		dp.print("CV#"); dp.print(CVadres);
-		setText(xE[4], yR[2], s); dp.print(CVvalue);
+		dp.print("CV"); dp.print(CVadres);
+		setText(xE[4], yR[1], s); dp.print(CVvalue);
 
 		//als in single mode CV value byte binair tonen
 		if (~preset[Prst].reg & (1 << 1)) { //lijst
-			byte x = xE[4]; byte y = yR[2] + 2;
+			byte x = xE[0]; byte y = yR[2] + 2;
 			byte data = 1; //loc CV
+
 			if (bfr[Bcount].reg & (1 << 6))data = 2; //acc CV 
 			for (byte i = 7; i < 255; i--) {
 				if (bfr[Bcount].db[data] & (1 << i)) {
@@ -957,7 +982,6 @@ bool IO_dp() { //displays msg's
 	dp.display();
 	return false;
 }
-
 void functions(byte x, byte y) {
 	byte z = 12;
 	for (byte i = 0; i < 13; i++) {
@@ -1020,80 +1044,6 @@ bool Fmap(byte positie) {
 	}
 	return onoff;
 }
-
-
-bool IO_DP_art() {
-
-	if (preset[Prst].reg & (1 << 0)) { //alleen de 'uit' tonen voor leesbaarheid
-		if (bfr[Bcount].reg & (1 << 0)) return true; //alleen 'uit' msg verwerken
-	}
-
-	GPIOR2 = 0; //reset gpr
-	unsigned int puls = 0; byte r = 0; byte d = 0;
-
-	if (preset[Prst].reg & (1 << 0)) { //alleen uit msg verwerken, dus de aan weghalen en tijd uitrekenen			
-		for (byte i = 0; i < Bsize; i++) {
-			//volgorde belangrijk
-			r = bfr[i].reg ^ bfr[Bcount].reg;// reken maar na klopt...alleen bit0 van .reg = verschillend				
-			if (bfr[i].adres == bfr[Bcount].adres && r == 1) {
-				puls = bfr[Bcount].tijd - bfr[i].tijd;
-				bfr[i].reg &= ~(1 << 7);//buffer vrijgeven
-				i = Bsize; //exit lus
-			}
-		}
-	}
-	else {
-		if (bfr[Bcount].reg & (1 << 0)) GPIOR2 |= (1 << 0); //zet flag POWEROUT=on		
-	}
-
-
-	//type msg bepalen
-	if (bfr[Bcount].reg & (1 << 2)) { //CV msg
-		d = 0;
-	}
-	else if (bfr[Bcount].reg & (1 << 1)) {//rechtdoor
-		d = 1;
-	}
-	else {//afslaand
-		d = 2;
-	}
-	// Display
-	byte t = 11; //tekst 10=aan, 11=uit
-
-	if (preset[Prst].reg & (1 << 1)) { //toon lijst
-		scrolldown(); //bovenste regel vrijmaken
-		DP_symbol(0, 0, d, 1); //teken symbool d (0=wissel cv, 1=wissel R, 2=wissel A)	
-		//Text(22, 0, 1, bfr[Bcount].adres, 0); //waarde adres, geen tekst
-		if (d > 0) { //not(yet) in CV
-			if (preset[Prst].reg & (1 << 0)) { //alleen uit msg tonen
-				DP_symbol(49, 0, 10, 1); //symbool 10 puls
-				//Text(57, 0, 1, puls, 12); //puls met txt12 "ms"
-			}
-			else { //aan en uit msg tonen
-				if (GPIOR2 & (1 << 0)) t = 10;
-				//Text(57, 0, 1, 0, t);
-			}
-		}
-	}
-	else { //toon enkel
-		DP_single(); //clears bovendeel display
-		DP_symbol(3, 0, d, 2);
-		DP_symbol(3, 0, d, 2);
-		//Text(42, 0, 2, bfr[Bcount].adres, 0);
-		if (d > 0) { //not in CV
-			if (preset[Prst].reg & (1 << 0)) { //Alleen uit msg
-				DP_symbol(13, 24, 10, 2);
-				//Text(30, 24, 2, puls, 12);
-			}
-			else { //aan en uit tonen				
-				if (GPIOR2 & (1 << 0)) t = 10;
-				//Text(30, 24, 2, 0, t);
-			}
-		}
-	}
-	bfr[Bcount].reg &= ~(1 << 7); // buffer vrijgeven
-	return false; //dus msg verwerkt
-}
 void DP_symbol(byte x, byte y, byte number, byte s) {
 	switch (number) {
 	case 0: //cv accessoire
@@ -1128,19 +1078,18 @@ void setText(byte x, byte y, byte s) {
 	dp.setTextColor(1);
 	dp.setCursor(x, y);
 }
-
 void scrolldown() {
 	//blok van 50 bovenste lijnen 10 (regelhoogte nog uitzoeken) naar beneden plaatsen
 	//regel voor regel onderste regel y=40~y=49 zwart maken
 	//blijft dus 15pixels over nu aan onderkant
 
-	for (byte y = 55; y < 65; y++) {
+	for (byte y = 45; y < 56; y++) { //45 kleiner om onderbalk te verhogen (10 hoog)
 		for (byte x = 0; x < 129; x++) {
 			dp.drawPixel(x, y, BLACK);
 		}
 	}
 
-	for (byte y = 54; y < 255; y--) {
+	for (byte y = 45; y < 255; y--) { //hier weer de 45
 		for (byte x = 0; x < 128; x++) {
 			if (dp.getPixel(x, y)) {
 				dp.drawPixel(x, y, BLACK);
