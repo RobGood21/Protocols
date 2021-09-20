@@ -25,7 +25,7 @@ bit0 false buffer leeg, true zit wat in de buffer (groene led?)
 bit1 false ruimte in buffer, true buffer vol (rode led?)
 bit2 false monitor, true programmeer
 bit3 flag gebruikt in Loc()
-bit4
+bit4 true:Scroll van knop2 false:geen scrol van knop2
 bit5
 bit6
 bit7

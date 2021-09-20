@@ -23,14 +23,15 @@ char version[] = "V 1.01"; //Openingstekst versie aanduiding
 #include <NmraDcc.h>
 
 //constanten
-#define Bsize 8 //hoe groot is de artikel buffer?
+#define Bsize 8 //aantal buffers
 #define Psize 4 //aantal presets
-#define PFsize 15 //aantal programfases
 #define autoDelete 10000 //tijd voor autodelete buffer inhoud 10sec
+#define Maxtime 50 //max tijd in 100ms voor wachten tussen tonen msg's
+#define PFsize  12 //aantal programfases
+
 
 //verkortingen 
 #define program GPIOR0 & (1<<2) //programmeer modus aan 
-
 
 //constructers
 Adafruit_SSD1306 dp(128, 64, &Wire); // , -1);
@@ -39,7 +40,8 @@ struct presets {
 	byte reg;
 	//bit0 True: Toon aan en uit msg, false: toon alleen uit met pulsduur
 	//bit1	True : Toon lijst onder elkaar, of false : 1 grote msg.
-	//bit2	
+	//bit2	true: Tijd  (default 1sec)  False: manual  afroep volgend msg
+
 	byte filter; //welke msg verwerken, true is verwerken, false is overslaan
 	//bit0 //loc
 	//bit1 //speed, direction 'R''
@@ -49,10 +51,13 @@ struct presets {
 	//bit5 //toon alleen 'AAN'
 	//bit6 //CV 'CV'
 	//bit7
+	byte time; //tijd tussen tonen van msg in stappen van 100ms 10=1sec.Default
 };
 presets preset[Psize];
 
 byte Prst; //huidig actief preset
+
+
 
 struct buffers {
 	byte reg;//
@@ -81,7 +86,7 @@ byte T_db[2]; //Tijdelijke opslag
 byte out[2]; //
 
 byte prgfase;
-byte DP_out = 0x00; //output byte
+//byte DP_out = 0x00; //output byte
 byte lastmsg[MAX_DCC_MESSAGE_LEN]; //length 6
 byte data[MAX_DCC_MESSAGE_LEN]; //bevat laatste ontvangen data uit de decoder
 byte Bcount; //pointer naar laast verwerkte artikel buffer
@@ -89,16 +94,15 @@ byte Bcount; //pointer naar laast verwerkte artikel buffer
 unsigned long slowtimer;
 //variabelen schakelaars
 byte SW_status = 15; //holds the last switch status, start as B00001111;
-byte SW_holdcounter[4]; //for scroll functie op buttons
+
+byte SW_holdcounter; //for scroll functie op buttons
 byte SW_scroll = B0000; //masker welke knoppen kunnen scrollen 1=wel 0=niet
 //tbv decoder NmrraDCC
-byte uniek = 0xFF;
+//byte uniek = 0xFF;
 byte slowcount;
 
-
-//tijdelijke varabelen
-byte teller; //gebruikt in display test
-byte temp;
+//byte teller; //gebruikt in display test
+//byte temp;
 //setup functions
 
 void MEM_read() {
@@ -111,6 +115,8 @@ void MEM_read() {
 		t = 200 + (i * 20);
 		preset[i].filter = EEPROM.read(t);
 		preset[i].reg = EEPROM.read(t + 1);
+		preset[i].time = EEPROM.read(t + 2);
+		if (preset[i].time == 0xFF)preset[i].time = 10; //default 1 seconde
 	}
 
 
@@ -142,7 +148,7 @@ void setup() {
 
 	DP_welcome(); //toon opening text
 	delay(500);
-	
+
 	MEM_read();
 	//xtra init
 	GPIOR2 = 0;
@@ -152,8 +158,9 @@ void setup() {
 
 	//displays
 
-DP_monitor();
+	DP_monitor();
 }
+
 void factory() {
 	for (int i = 0; i < EEPROM.length(); i++) {
 		EEPROM.update(i, 0xFF);
@@ -241,16 +248,17 @@ void SW_exe() {
 		}
 	}
 	//hold pressed for scroll function
-	for (byte i = 0; i < 4; i++) {
-		if (~read & (1 << i) && SW_scroll & (1 << i)) {
-			if (SW_holdcounter[i] > 30) { //tijdxslowtimer voor scroll begint, tempo scroll komt uit loop, slowevents slowtimer
-				SW_on(i);
-			}
-			else {
-				SW_holdcounter[i] ++;
-			}
+
+	if (~read & (1 << 2) && GPIOR0 & (1 << 4)) { //sw3 en scroll toegestaan 
+		Serial.print("+");
+		if (SW_holdcounter > 30) { //tijdxslowtimer voor scroll begint, tempo scroll komt uit loop, slowevents slowtimer
+			SW_on(2);
+		}
+		else {
+			SW_holdcounter++;
 		}
 	}
+
 
 	SW_status = read;
 }
@@ -268,6 +276,19 @@ void SW_on(byte sw) {
 		break;
 	case 1:
 		if (program) { //program stand
+			GPIOR0 &= ~(1 << 4); //disable scroll button 2
+
+			switch (prgfase) {
+			case 2:
+				if (~preset[Prst].filter & (1 << 0))prgfase = 5;
+				break;
+			case 6:
+				if (~preset[Prst].filter & (1 << 4)) prgfase = 9;
+				break;
+			case 10:
+				GPIOR0 |= (1 << 4);
+				break;
+			}
 			prgfase++;
 			if (prgfase >= PFsize)prgfase = 0;
 			DP_prg();
@@ -288,10 +309,10 @@ void SW_on(byte sw) {
 		}
 		break;
 
-	case 3:
+	case 3: //knop 3 NIET gebruiken voor program????
 		if (program) {
-			ParaUp();
-			DP_prg();
+			//ParaUp();
+			//DP_prg();
 		}
 		else {
 			IO_exe();
@@ -301,7 +322,7 @@ void SW_on(byte sw) {
 	}
 }
 void SW_off(byte sw) {
-	SW_holdcounter[sw] = 0; //reset counter for scroll function 
+	if (sw == 2)SW_holdcounter = 0; //reset counter for scroll function 
 /*
 	//Test schakelaars
 	dp.clearDisplay();
@@ -319,11 +340,9 @@ void DP_prg() { //iedere keer geheel vernieuwen?
 	byte x[4] = { 0,26,45,68 };
 	dp.clearDisplay();
 	dp.setTextSize(1); dp.setTextColor(1);
-
 	//regel 1
 	dp.setCursor(0, y);
 	dp.print(F("Preset:")); dp.print(Prst + 1);
-	if (prgfase == 0) { px = x[0]; py = y + 8; w = x[0] + 47, h = y + 8; }//Cursor preset
 	dp.setCursor(x[3], y);
 	if (preset[Prst].reg & (1 << 1)) { //lijst
 		dp.print(F("Lijst"));
@@ -331,62 +350,101 @@ void DP_prg() { //iedere keer geheel vernieuwen?
 	else { //enkel
 		dp.print(F("Apart"));
 	}
-	if (prgfase == 1) { px = x[3]; py = y + 8; w = x[3] + 27; h = y + 8; }//cursor lijst/apart
-
 	//regel 2 
 	y = 12;
 	drawCheck(x[0], y, preset[Prst].filter & (1 << 0)); //check toon locs
 	drawLoc(x[0] + 8, y, 1);
 
-	if (prgfase == 2) { px = x[0]; py = y + 8; w = x[0] + 20; h = y + 8; }//cursor loc
-
 	if (preset[Prst].filter & (1 << 0)) { //alleen als loc check is true
 		drawCheck(x[1], y, preset[Prst].filter & (1 << 1));
 		dp.setCursor(x[1] + 8, y); dp.print(F("R")); //rijden msg
-		if (prgfase == 3) { px = x[1]; py = y + 8; w = x[1] + 10; h = y + 8; } //cursor loc R
 		drawCheck(x[2], y, preset[Prst].filter & (1 << 2));
 		dp.setCursor(x[2] + 8, y); dp.print(F("F")); //functies van de loc
-		if (prgfase == 4) { px = x[2]; py = y + 8; w = x[2] + 10; h = y + 8; } //cursor Loc F
 		drawCheck(x[3], y, preset[Prst].filter & (1 << 3));
 		dp.setCursor(x[3] + 8, y); dp.print(F("CV")); //CV voor de loc
-		if (prgfase == 5) { px = x[3]; py = y + 8; w = x[3] + 16; h = y + 8; } //cursor Loc CV
 	}
+
 	//regel 3
 	y = 22;
 	drawCheck(x[0], y, preset[Prst].filter & (1 << 4)); //check toon artikelen
 	drawWissel(x[0] + 8, y, 1, 0);
-	if (prgfase == 6) { px = x[0]; py = y + 8; w = x[0] + 20; h = y + 8; } //cursor Artikelen
-
 	//alleen als artikel check is true
 	if (preset[Prst].filter & (1 << 4)) {
-
 		drawCheck(x[1], y, preset[Prst].filter & (1 << 5));
 		dp.setCursor(x[1] + 8, y); dp.print(F("S")); //Switch msg 
-		if (prgfase == 7) { px = x[1]; py = y + 8; w = x[1] + 12; h = y + 8; } //cursor Artikelen CV
-
 		drawCheck(x[2], y, preset[Prst].reg & (1 << 0)); drawPuls(x[2] + 8, y, 1);
 		dp.setCursor(x[2] + 8, y);// dp.print(F("puls")); //puls of aan/uit	
-		if (prgfase == 8) { px = x[2]; py = y + 8; w = x[2] + 10; h = y + 8; } //cursor Artikelen switch
-
 		drawCheck(x[3], y, preset[Prst].filter & (1 << 6));
 		dp.setCursor(x[3] + 8, y); dp.print(F("CV")); //CV	
-		if (prgfase == 9) { px = x[3]; py = y + 8; w = x[3] + 28; h = y + 8; } //cursor Artikelen CV
 	}
-
-	//if (prgfase == 6)dp.drawLine(x[0], y + 8, x[0] + 22, y + 8, 1); //print cursor
-
-	//drawWissel(0, 22, 1, 0);
-
 	//regel 4
-
-	//regel 5
-	dp.drawLine(px, py, w, h, 1);
+	y = 32;
+	setText(x[0], y, 1);
+	if (preset[Prst].reg & (1 << 2)) { //automatisch op tijd 'aut'
+		TXT(10);
+		setText(x[1], y, 1);
+		byte tens = 0; byte sec;
+		sec = preset[Prst].time;
+		while (sec > 9) {
+			tens++;
+			sec -= 10;
+		}
+		dp.print(tens); dp.print("."); dp.print(sec); dp.print("s");
+	}
+	else { //handmatig 'man'
+		TXT(11);
+	}
+	DP_cursor();
 	dp.display();
+}
+void DP_cursor() {
+	byte x; byte y;
+	byte yr1 = 8; byte yr2 = 20; byte yr3 = 30; byte yr4 = 40;
+	byte xe;
+	byte ye; //x einde y einde
+	switch (prgfase) {
+	case 0: //preset
+		x = 0; y = yr1; xe = 47, ye = yr1;
+		break;
+	case 1: //lijst/apart
+		x = 68; y = yr1; xe = 96; ye = yr1;
+		break;
+	case 2://loc
+		x = 0; y = yr2; xe = 20; ye = yr2;
+		break;
+	case 3://loc R
+		x = 26; y = yr2; xe = x + 10; ye = yr2;
+		break;
+	case 4: //loc Functions
+		x = 45; ; y = yr2, xe = x + 10, ye = yr2;
+		break;
+	case 5://loc CV
+		x = 67; y = yr2; xe = x + 18; ye = yr2;
+		break;
+	case 6: //Accessoires
+		x = 0; y = y = yr3; xe = x + 20; ye = yr3;
+		break;
+	case 7: //accessoire S
+		x = 26; y = yr3; xe = x + 10; ye = yr3;
+		break;
+	case 8: //accessoire Puls
+		x = 45; y = yr3; xe = x + 10; ye = yr3;
+		break;
+	case 9: //Accessoire CV
+		x = 67; y = yr3; xe = x + 20; ye = yr3;
+		break;
+	case 10: //aut/man
+		x = 0; y = yr4; xe = x + 20; ye = yr4;
+		break;
+	case 11://tijd
+		x = 26; y = yr4; xe = x + 20; ye = yr4;
+		break;
+	}
+	dp.drawLine(x, y, xe, ye, 1);
 }
 void ParaUp() {
 	switch (prgfase) {
 	case 0:
-		if (Prst < Psize - 1)Prst++; //Psize starts at 1; array at 0
 		break;
 	case 1:
 
@@ -427,7 +485,8 @@ void ParaDown() {
 
 	switch (prgfase) {
 	case 0:
-		if (Prst > 0)Prst--;
+		Prst++;
+		if (Prst > Psize - 1) Prst = 0;
 		break;
 	case 1:
 		preset[Prst].reg ^= (1 << 1);//flip  preset[Prst].reg bit1 lijst of apart
@@ -457,8 +516,11 @@ void ParaDown() {
 		preset[Prst].filter ^= (1 << 6); //tonen puls of aan uit msg
 		break;
 	case 10:
+		preset[Prst].reg ^= (1 << 2); //aut of man msg tonen
 		break;
 	case 11:
+		preset[Prst].time++;
+		if (preset[Prst].time > Maxtime)preset[Prst].time = 1;
 		break;
 	case 12:
 		break;
@@ -1152,12 +1214,12 @@ void TXT(byte n) {
 	case 0: //niets
 		dp.print(F(""));
 		break;
-		//case 10:
-		//	dp.print(F("aan"));
-		//	break;
-		//case 11:
-		//	dp.print(F("uit"));
-		//	break;
+	case 10:
+		dp.print(F("aut"));
+		break;
+	case 11:
+		dp.print(F("man"));
+		break;
 	case 12:
 		dp.print(F("ms"));
 		break;
