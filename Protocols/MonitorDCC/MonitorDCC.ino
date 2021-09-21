@@ -24,7 +24,7 @@ char version[] = "V 1.01"; //Openingstekst versie aanduiding
 #define Psize 4 //aantal presets
 #define autoDelete 10000 //tijd voor autodelete buffer inhoud 10sec
 #define Maxtime 50 //max tijd in 100ms voor wachten tussen tonen msg's
-#define PFsize  12 //aantal programfases
+#define PFsize  13 //aantal programfases
 
 
 //verkortingen 
@@ -38,6 +38,8 @@ struct presets {
 	//bit0 True: Toon aan en uit msg, false: toon alleen uit met pulsduur
 	//bit1	True : Toon lijst onder elkaar, of false : 1 grote msg.
 	//bit2	true: Tijd  (default 1sec)  False: manual  afroep volgend msg
+	//bit3  true: output als decoder 'dec' false: output als monitor
+	//bit4  als in decoder mode decoder met monitor of decoder per direct. 
 
 	byte filter; //welke msg verwerken, true is verwerken, false is overslaan
 	//bit0 //loc
@@ -80,7 +82,6 @@ unsigned long AutTime;
 byte countautodelete; //gebruik in checkBuffer
 
 byte prgfase;
-//byte DP_out = 0x00; //output byte
 byte lastmsg[MAX_DCC_MESSAGE_LEN]; //length 6
 byte data[MAX_DCC_MESSAGE_LEN]; //bevat laatste ontvangen data uit de decoder
 byte Bcount; //pointer naar laast verwerkte artikel buffer
@@ -148,10 +149,9 @@ void setup() {
 	GPIOR2 = 0;
 
 	//tijdelijk
-	out[0] = 138; out[1] = 33;
+	//out[0] = 138; out[1] = 33;
 
 	//displays
-
 	DP_monitor();
 }
 
@@ -185,25 +185,31 @@ void DP_welcome() {
 }
 void DP_monitor() { //maakt display schoon, toont output bytes
 	dp.clearDisplay();
+	output();
+	dp.display();
+}
+
+void output() {
 	byte x = 0; byte bte = 0;
-	//onderbalk met 2 plus 4xnibble output bytes
+	//out[0]=17;
+
+		//onderbalk met 2 plus 4xnibble output bytes
 	for (byte i = 0; i < 16; i++) {
 		if (i > 7)bte = 1;
 
-		if (out[bte] & (1 << i - (bte * 8))) {
+		if (out[bte] & (1 << 7 - (i - (bte * 8)))) {
 
-			dp.drawRect(x + (i * 7), 57, 6, 7, 1);
-			//dp.fillRect(x+3,60,2,2,1);
+			dp.fillRect(x + (i * 7), 57, 6, 7, 1);
 		}
 		else {
-			dp.fillRect(x + (i * 7), 57, 6, 7, 1);
+			dp.drawRect(x + (i * 7), 57, 6, 7, 1);
 		}
 
 		if (i == 3 || i == 11)x += 3;
 		if (i == 7)x += 6;
 	}
-	dp.display();
 }
+
 void loop() {
 	//processen
 	Dcc.process();
@@ -291,7 +297,12 @@ void SW_on(byte sw) {
 				if (~preset[Prst].filter & (1 << 4)) prgfase = 9;
 				break;
 			case 10:
-				GPIOR0 |= (1 << 4);
+				if (~preset[Prst].reg & (1 << 2)) {
+					prgfase++;
+				}
+				else {
+					GPIOR0 |= (1 << 4);
+				}
 				break;
 			}
 			prgfase++;
@@ -399,6 +410,15 @@ void DP_prg() { //iedere keer geheel vernieuwen?
 	else { //handmatig 'man'
 		TXT(11);
 	}
+	//keuze monitor/decoder
+	setText(x[3], y, 1);
+	if (preset[Prst].reg & (1 << 3)) {
+		TXT(16);
+	}
+	else {
+		TXT(15);
+	}
+
 	DP_cursor();
 	dp.display();
 }
@@ -443,6 +463,9 @@ void DP_cursor() {
 		break;
 	case 11://tijd
 		x = 26; y = yr4; xe = x + 20; ye = yr4;
+		break;
+	case 12:
+		x = 67; y = yr4; xe = x + 20; ye = yr4;
 		break;
 	}
 	dp.drawLine(x, y, xe, ye, 1);
@@ -918,11 +941,8 @@ bool IO_dp() { //displays msg's
 	//rijen
 	byte yR[3]; //rijen 
 	int CVadres; byte CVvalue;
-
 	//Type msg en symbol bepalen
 	if (bfr[Bcount].reg & (1 << 6)) { //accesoire
-
-
 		//puls mode
 		if (preset[Prst].filter & (1 << 5)) { //switching mode on
 			if (preset[Prst].reg & (1 << 0)) { //alleen de 'uit' tonen met pulsduur
@@ -1249,12 +1269,12 @@ void TXT(byte n) {
 	case 12:
 		dp.print(F("ms"));
 		break;
-		//case 15:
-		//	dp.print(F(">>"));
-		//	break;
-		//case 16:
-		//	dp.print(F("<<"));
-		//	break;
+	case 15:
+		dp.print(F("Mon"));
+		break;
+	case 16:
+		dp.print(F("Dec"));
+		break;
 	}
 }
 

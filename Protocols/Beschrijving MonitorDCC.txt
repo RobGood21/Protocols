@@ -17,6 +17,7 @@ MEM_reg instellingen van preset
 bit0  Toon aan en uit, false toon alleen uit de pulsduur dus NA de uit msg, true (default)
 bit1	True:Toon lijst, false: 1 grote msg.
 bit2	volgend msg true time false manual (.time as byte in preset)
+bit3 true:(default) Dec(decoder)  false: Mon (monitor) bruikbaar asl converter  
 
 
 General purpose register flags
