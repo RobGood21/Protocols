@@ -71,6 +71,7 @@ struct buffers {
 	unsigned long tijd; //L&A: bevat tijd laatste aanpassing
 	byte instructie; //Loc: bevat waarde instructie byte
 	byte db[3]; //tijdelijk van 2 > 3
+	byte adresbyte; //adres byte
 }; buffers bfr[Bsize]; //aantal buffer artikelen
 
 //variabelen
@@ -185,29 +186,30 @@ void DP_welcome() {
 }
 void DP_monitor() { //maakt display schoon, toont output bytes
 	dp.clearDisplay();
-	output();
+	//output();
 	dp.display();
 }
 
 void output() {
+	outputClear();
 	byte x = 0; byte bte = 0;
 	//out[0]=17;
-
 		//onderbalk met 2 plus 4xnibble output bytes
-	for (byte i = 0; i < 16; i++) {
+	for (byte i = 0; i < 16; i++) {		
 		if (i > 7)bte = 1;
-
 		if (out[bte] & (1 << 7 - (i - (bte * 8)))) {
-
 			dp.fillRect(x + (i * 7), 57, 6, 7, 1);
 		}
 		else {
 			dp.drawRect(x + (i * 7), 57, 6, 7, 1);
 		}
-
 		if (i == 3 || i == 11)x += 3;
 		if (i == 7)x += 6;
 	}
+}
+
+void outputClear() {
+	dp.fillRect(0, 57, 128, 7, 0);
 }
 
 void loop() {
@@ -551,6 +553,7 @@ void ParaDown() {
 		if (preset[Prst].time > Maxtime)preset[Prst].time = 1;
 		break;
 	case 12:
+		preset[Prst].reg ^= (1 << 3); //Dec (decoder, default) of Mon  (monitor)
 		break;
 	case 13:
 		break;
@@ -604,9 +607,7 @@ void notifyDccMsg(DCC_MSG * Msg) {
 
 		if (bte & (1 << 3))reg |= (1 << 0); //onoff
 		if (bte & (1 << 0))reg |= (1 << 1);//false=rechtdoor, true = afslaan
-		reg |= (1 << 6); //accessoire
-
-
+		reg |= (1 << 6); //accessoire	
 
 		if ((data[2] >> 2) == B111011) { // zou problemen kunnen geven?
 			reg |= (1 << 3);  //("CV");
@@ -843,6 +844,7 @@ void Write_Loc() { //adres en instructiebyte
 
 	bfr[free].adres = T_adres;
 	bfr[free].instructie = T_instructie; //= eerste byte na adres.
+	bfr[free].adresbyte = data[0];
 	bfr[free].db[0] = 0;
 	bfr[free].db[1] = 0;
 	bfr[free].reg = 0;
@@ -853,6 +855,7 @@ void Write_Loc() { //adres en instructiebyte
 }
 void clearBuffer(byte buffer) {
 	bfr[buffer].reg = 0;
+	bfr[buffer].adresbyte = 0;
 	bfr[buffer].adres = 0;
 	bfr[buffer].instructie = 0;
 	bfr[buffer].tijd = 0;
@@ -876,9 +879,7 @@ void Debug_bfr(bool n, byte buffer) {
 }
 
 void Write_AccCV(int adr) {
-
 	Serial.println("cv");
-
 	//schrijft een Accesoire CV in een buffer, deze msg wordt niet herhaald dus geen routine nodig
 	//voor uitvangen dubbele
 	//databytes en reg is voldoende 
@@ -888,7 +889,8 @@ void Write_AccCV(int adr) {
 
 	bfr[buffer].adres = adr;
 	bfr[buffer].reg = B11001000, //bit7 active bit6 accessoire bit 3 CV msg
-		bfr[buffer].instructie = data[1];
+	bfr[buffer].instructie = data[1];
+	bfr[buffer].adresbyte = data[0];
 	bfr[buffer].db[0] = data[2];
 	bfr[buffer].db[1] = data[3];
 	bfr[buffer].db[2] = data[4];
@@ -914,6 +916,8 @@ void Write_Acc(int adr, byte reg) { //called from 'notifyDccMsg()'
 		if (buffer == Bsize)return; //uitspringen geen vrije buffer gevonden
 		clearBuffer(buffer);
 		bfr[buffer].adres = adr;
+		bfr[buffer].adresbyte = data[0];
+		bfr[buffer].instructie = data[1];//T_instructie;
 		bfr[buffer].reg = reg;
 		bfr[buffer].tijd = millis();
 		bfr[buffer].reg |= (1 << 7); //set buffer active
@@ -923,6 +927,10 @@ void Write_Acc(int adr, byte reg) { //called from 'notifyDccMsg()'
 //IO alles met de uitvoer van de ontvangen msg. periodiek of manual
 void IO_exe() { //toont een buffer, called manual, time, or direct from loop.
 	bool read = true; byte count = 0;
+	//clear outs
+	outputClear();
+	out[0] = 0; out[1] = 0;
+
 	while (read) {
 		if (bfr[Bcount].reg & (1 << 7)) read = IO_dp(); //Alleen als bfr[].reg bit7=true
 		Bcount++;
@@ -930,7 +938,7 @@ void IO_exe() { //toont een buffer, called manual, time, or direct from loop.
 		count++;
 		if (count > Bsize)read = false; //exit als er geen te tonen buffer is gevonden
 	}
-	//dp.display();
+	dp.display();
 }
 bool IO_dp() { //displays msg's 
 	//venster instelling
@@ -949,7 +957,6 @@ bool IO_dp() { //displays msg's
 				if (bfr[Bcount].reg & (1 << 0)) return true; //buffer is een 'aan' accessoire, overslaan
 			}
 		}
-
 		//aan/uit mode of een uit msg 
 		if (bfr[Bcount].reg & (1 << 3)) { //accessoire CV msg
 			symbolE[0] = 0; //CV
@@ -1086,8 +1093,15 @@ bool IO_dp() { //displays msg's
 	}
 
 	//afsluiting
+
+	if (~preset[Prst].reg & (1 << 3)) {
+	out[0] = bfr[Bcount].adresbyte;
+	out[1] = bfr[Bcount].instructie;
+	output();
+	}	
+	
 	bfr[Bcount].reg &= ~(1 << 7); // buffer vrijgeven
-	dp.display();
+	//dp.display();
 	return false;
 }
 void functions(byte x, byte y) {
