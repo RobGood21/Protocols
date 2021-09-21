@@ -12,10 +12,7 @@
 
 
 char version[] = "V 1.01"; //Openingstekst versie aanduiding
-
-
 //libraries
-
 //#include <Adafruit_GFX.h>
 #include <EEPROM.h>
 #include <Wire.h>
@@ -54,10 +51,7 @@ struct presets {
 	byte time; //tijd tussen tonen van msg in stappen van 100ms 10=1sec.Default
 };
 presets preset[Psize];
-
 byte Prst; //huidig actief preset
-
-
 
 struct buffers {
 	byte reg;//
@@ -78,12 +72,12 @@ struct buffers {
 }; buffers bfr[Bsize]; //aantal buffer artikelen
 
 //variabelen
-
 int T_adres = 0; //tijdelijk adres
 byte T_instructie = 0; //Tijdelijk opslag instructie byte
 byte T_db[2]; //Tijdelijke opslag
-
 byte out[2]; //
+unsigned long AutTime;
+byte countautodelete; //gebruik in checkBuffer
 
 byte prgfase;
 //byte DP_out = 0x00; //output byte
@@ -116,7 +110,7 @@ void MEM_read() {
 		preset[i].filter = EEPROM.read(t);
 		preset[i].reg = EEPROM.read(t + 1);
 		preset[i].time = EEPROM.read(t + 2);
-		if (preset[i].time == 0xFF)preset[i].time = 10; //default 1 seconde
+		if (preset[i].time == 0xFF)preset[i].time = 5; //default 0,5 seconde
 	}
 
 
@@ -225,6 +219,17 @@ void loop() {
 		}
 		SW_exe();
 	}
+
+	//timer voor next msg
+	if (~GPIOR0 & (1 << 2)) { //monitor display
+		if (preset[Prst].reg & (1 << 2)) { //aut mode
+			if (millis() - AutTime > preset[Prst].time * 100) {
+				AutTime = millis();
+				IO_exe();
+			}
+		}
+	}
+
 }
 //schakelaars
 void SW_exe() {
@@ -315,7 +320,7 @@ void SW_on(byte sw) {
 			//DP_prg();
 		}
 		else {
-			IO_exe();
+			if (~preset[Prst].reg & (1 << 2))IO_exe();
 		}
 		break;
 
@@ -536,7 +541,11 @@ void ParaDown() {
 }
 //terugmeldingen (callback) uit libraries (NmraDCC)
 void notifyDccMsg(DCC_MSG * Msg) {
-	//direct achter elkaar ontvangen gelijke msg's uitfilteren
+
+	//uitschakelen in program mode
+	if (GPIOR0 & (1 << 2))return;
+
+	//direct achter elkaar ontvangen gelijke msg's uitfilteren	
 	bool nieuw = true;
 	for (byte i = 0; i < MAX_DCC_MESSAGE_LEN; i++) {
 		if (lastmsg[i] != Msg->Data[i]) nieuw = false;
@@ -555,6 +564,8 @@ void notifyDccMsg(DCC_MSG * Msg) {
 		Loc(true);
 	}
 	else if (db < 192) {//Basic Accessory Decoders with 9 bit addresses and Extended Accessory
+		//filter monitor accessoires
+		if (~preset[Prst].filter & (1 << 4))return; //stop als filter = false						
 		//decoder adres bepalen
 		bte = db;
 		bte = bte << 2; adr = bte >> 2; //clear bit7 en 6
@@ -574,9 +585,9 @@ void notifyDccMsg(DCC_MSG * Msg) {
 
 
 
-		if ((data[2] >> 2) == B111011) { //kan niet is nu checksum
+		if ((data[2] >> 2) == B111011) { // zou problemen kunnen geven?
 			reg |= (1 << 3);  //("CV");
-			Write_AccCV(adr);
+			if (preset[Prst].filter & (1 << 6))Write_AccCV(adr);
 		}
 		else {
 			//als switch filter is false alleen 'AAN' msg doorlaten
@@ -603,6 +614,14 @@ void checkBuffer() {
 	//check of er te verwerken msg in buffer zitten en of de buffer niet vol is. 
 	//verder check of er loc msg inzitten die al getoond zijn maar laatste aanpassing oud, bv > 3000ms en speed op nul
 
+	//hangende buffers wissen
+	countautodelete++;
+	if (countautodelete == 0) { //alleen als =0
+		//Serial.print("[]");
+		for (byte i = 0; i < Bsize; i++) {
+			if (millis() - bfr[i].tijd > 2 * autoDelete)clearBuffer(i); //lang niet gebruikt
+		}
+	}
 	GPIOR0 &= ~(1 << 0); //flag msg in buffer
 	GPIOR0 |= (1 << 1); //flag buffer full
 
@@ -615,9 +634,7 @@ void checkBuffer() {
 		}
 	}
 
-	PORTD &= ~(3 << 3); //clear leds, periodiek in loop()
-	//PORTD &= ~(1 << 4);
-
+	PORTD &= ~(3 << 3);
 	if (GPIOR0 & (1 << 0)) {
 		PIND |= (1 << 3);
 	}
@@ -626,12 +643,14 @@ void checkBuffer() {
 	}
 	if (GPIOR0 & (1 << 1))PIND |= (1 << 4);
 }
+
+
 void Loc(bool t) {
 
 	//000, 001, 110 not on this project V1.01 sept 2021 
 	//instr = data[2] >> 5; //010=reversed 011=forward 100=F1 101=F2 111=CV 
-
 	if (~preset[Prst].filter & (1 << 0))return; //Filter voor Loc msg
+
 	if (t) { //7 bits adres
 		T_adres = data[0];
 		T_instructie = data[1];
@@ -735,6 +754,7 @@ void LocMsg(byte tiep) { //called from loc() 1=drive 2=function 1 3 = function2
 					//uitgaande dat CV29bit1=true (28 snelheidsstappen) geeft bit 4 FL(headlights) bit0 F1 bit3 F3					
 					bfr[i].db[0] = GPIOR2;
 					changed(i);
+					return;
 				}
 				break;
 
@@ -755,6 +775,7 @@ void LocMsg(byte tiep) { //called from loc() 1=drive 2=function 1 3 = function2
 				else {
 					bfr[i].db[1] = GPIOR2;
 					changed(i);
+					return;
 				}
 				break;
 			}
@@ -763,7 +784,8 @@ void LocMsg(byte tiep) { //called from loc() 1=drive 2=function 1 3 = function2
 	//niet uit de functie gesprongen door 'return' dus geen msg gevonden
 	//Serial.println("geen msg");
 
-	if (tiep == 1)Write_Loc(); //1=drive 2=functions 1 3=functions 2  (alleen nieuwe buffer maken bij drive msg.
+	//if (tiep == 1)
+	Write_Loc(); //1=drive 2=functions 1 3=functions 2  (alleen nieuwe buffer maken bij drive msg.
 }
 void changed(byte b) {
 	bfr[b].tijd = millis();
@@ -1022,9 +1044,13 @@ bool IO_dp() { //displays msg's
 			}
 		}
 		else { //locomotief
-			DP_symbol(xE[2], yR[1], symbolE[1], s); //symbool accessoire aan/uit  loc forward/reverse
-			setText(xE[3], yR[1], s);
-			dp.print(speed);
+
+			if (preset[Prst].filter & (1 << 1)) {
+				DP_symbol(xE[2], yR[1], symbolE[1], s); //symbool accessoire aan/uit  loc forward/reverse
+				setText(xE[3], yR[1], s);
+				dp.print(speed);
+			}
+
 			if (preset[Prst].filter & (1 << 2)) { //Functions tonen
 				//verschil tussen lijst en single, lijst alleen FL, single alle functions (alle 28 dus)
 				if (preset[Prst].reg & (1 << 1)) { //lijst

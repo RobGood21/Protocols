@@ -13,17 +13,17 @@ bfr[].reg (register van een msg buffer)
 zie struct buffers{}
 
 
-MEM_reg instellingen die opgeslagen in EEPROM
+MEM_reg instellingen van preset
 bit0  Toon aan en uit, false toon alleen uit de pulsduur dus NA de uit msg, true (default)
 bit1	True:Toon lijst, false: 1 grote msg.
-bit2	True: Toon output as converter AAAACDDP A=adres C=on/off DD=channel 0~3 P=poort R of A
+bit2	volgend msg true time false manual (.time as byte in preset)
 
 
 General purpose register flags
 GPIOR0
 bit0 false buffer leeg, true zit wat in de buffer (groene led?)
 bit1 false ruimte in buffer, true buffer vol (rode led?)
-bit2 false monitor, true programmeer
+bit2 false monitor, true programmeer scherm
 bit3 flag gebruikt in Loc()
 bit4 true:Scroll van knop2 false:geen scrol van knop2
 bit5
