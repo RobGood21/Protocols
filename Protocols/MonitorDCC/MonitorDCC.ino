@@ -114,17 +114,13 @@ void MEM_read() {
 		preset[i].time = EEPROM.read(t + 2);
 		if (preset[i].time == 0xFF)preset[i].time = 5; //default 0,5 seconde
 	}
-
-
 }
 void MEM_write() {
 	EEPROM.update(110, Prst);
 	EEPROM.update(200 + (Prst * 20) + 0, preset[Prst].filter);
 	EEPROM.update(200 + (Prst * 20) + 1, preset[Prst].reg);
-
 }
 void setup() {
-
 	//start processen
 	Serial.begin(9600);
 	dp.begin(SSD1306_SWITCHCAPVCC, 0x3C);
@@ -136,6 +132,7 @@ void setup() {
 	DDRC &= ~B00001111;
 	PORTC |= B00001111;
 	DDRD |= (1 << 3); DDRD |= (1 << 4); //groene en rode  leds
+	DDRD |= (1 << 5); //blauwe led command op output
 
 	//reset, factory knop 0+3
 	delay(10);
@@ -930,6 +927,7 @@ void IO_exe() { //toont een buffer, called manual, time, or direct from loop.
 	//clear outs
 	outputClear();
 	out[0] = 0; out[1] = 0;
+	PORTD &= ~(1 << 5);
 
 	while (read) {
 		if (bfr[Bcount].reg & (1 << 7)) read = IO_dp(); //Alleen als bfr[].reg bit7=true
@@ -1098,6 +1096,7 @@ bool IO_dp() { //displays msg's
 	out[0] = bfr[Bcount].adresbyte;
 	out[1] = bfr[Bcount].instructie;
 	output();
+	PORTD |= (1 << 5);
 	}	
 	
 	bfr[Bcount].reg &= ~(1 << 7); // buffer vrijgeven
