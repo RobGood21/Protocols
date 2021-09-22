@@ -24,7 +24,7 @@ char version[] = "V 1.01"; //Openingstekst versie aanduiding
 #define Psize 4 //aantal presets
 #define autoDelete 10000 //tijd voor autodelete buffer inhoud 10sec
 #define Maxtime 50 //max tijd in 100ms voor wachten tussen tonen msg's
-#define PFsize  13 //aantal programfases
+#define PFsize  15 //aantal programfases
 
 
 //verkortingen 
@@ -38,8 +38,10 @@ struct presets {
 	//bit0 True: Toon aan en uit msg, false: toon alleen uit met pulsduur
 	//bit1	True : Toon lijst onder elkaar, of false : 1 grote msg.
 	//bit2	true: Tijd  (default 1sec)  False: manual  afroep volgend msg
-	//bit3  true: output als decoder 'dec' false: output als monitor
-	//bit4  als in decoder mode decoder met monitor of decoder per direct. 
+	//bit3 
+	//bit4 
+	//bit5  
+	//bit6: true: in converter alleen 4 decoders (aantal decoders???????)
 
 	byte filter; //welke msg verwerken, true is verwerken, false is overslaan
 	//bit0 //loc
@@ -51,6 +53,8 @@ struct presets {
 	//bit6 //CV 'CV'
 	//bit7
 	byte time; //tijd tussen tonen van msg in stappen van 100ms 10=1sec.Default
+	byte outputType; //0=out 1=bad accessoire 2=mf locs 3=converter, parallel out
+	int adres;
 };
 presets preset[Psize];
 byte Prst; //huidig actief preset
@@ -113,12 +117,19 @@ void MEM_read() {
 		preset[i].reg = EEPROM.read(t + 1);
 		preset[i].time = EEPROM.read(t + 2);
 		if (preset[i].time == 0xFF)preset[i].time = 5; //default 0,5 seconde
+		preset[i].outputType = EEPROM.read(t + 3);
+		if (preset[i].outputType > 3)preset[i].outputType = 0;
+		EEPROM.get(t + 5, preset[i].adres);
+		if (preset[i].adres == 0xFFFF)preset[i].adres = 1;
 	}
 }
 void MEM_write() {
 	EEPROM.update(110, Prst);
 	EEPROM.update(200 + (Prst * 20) + 0, preset[Prst].filter);
 	EEPROM.update(200 + (Prst * 20) + 1, preset[Prst].reg);
+	EEPROM.update(200 + (Prst * 20) + 2, preset[Prst].time);
+	EEPROM.update(200 + (Prst * 20) + 3, preset[Prst].outputType);
+	EEPROM.put(200 + (Prst * 20) + 5, preset[Prst].outputType);
 }
 void setup() {
 	//start processen
@@ -183,7 +194,7 @@ void DP_welcome() {
 }
 void DP_monitor() { //maakt display schoon, toont output bytes
 	dp.clearDisplay();
-	//output();
+	dp.drawFastHLine(0, 55, 128, 1);
 	dp.display();
 }
 
@@ -192,7 +203,7 @@ void output() {
 	byte x = 0; byte bte = 0;
 	//out[0]=17;
 		//onderbalk met 2 plus 4xnibble output bytes
-	for (byte i = 0; i < 16; i++) {		
+	for (byte i = 0; i < 16; i++) {
 		if (i > 7)bte = 1;
 		if (out[bte] & (1 << 7 - (i - (bte * 8)))) {
 			dp.fillRect(x + (i * 7), 57, 6, 7, 1);
@@ -409,65 +420,95 @@ void DP_prg() { //iedere keer geheel vernieuwen?
 	else { //handmatig 'man'
 		TXT(11);
 	}
-	//keuze monitor/decoder
-	setText(x[3], y, 1);
-	if (preset[Prst].reg & (1 << 3)) {
+	//regel 5 	
+	y = 42;
+//keuze monitor/decoder
+	setText(x[0], y, 1);
+	TXT(19);
+	switch (preset[Prst].outputType) { //1=bad 2=MFD 3=par ***
+	case 0:		
+		break;
+	case 1:
 		TXT(16);
-	}
-	else {
+		break;
+	case 2:
 		TXT(15);
-	}
+		break;
+	case 3:
+		TXT(17);
+		break;
+}
+	//adres output (default 1)
+	drawCheck(x[2], y, false); // preset[Prst].filter & (1 << 6));
+	setText(x[2]+8, y, 1);
+	dp.print(preset[Prst].adres);
+
+
+
+	//regel 6
+	y = 52;
+
+
+
 
 	DP_cursor();
 	dp.display();
 }
 void DP_cursor() {
 	byte x; byte y;
-	byte yr1 = 8; byte yr2 = 20; byte yr3 = 30; byte yr4 = 40;
-	byte xe;
-	byte ye; //x einde y einde
+	byte yr1 = 8; byte yr2 = 20; byte yr3 = 30; byte yr4 = 40; byte yr5 = 50;
+	byte w;
 	switch (prgfase) {
 	case 0: //preset
-		x = 0; y = yr1; xe = 47, ye = yr1;
+		x = 0; y = yr1; w = 47;
 		break;
 	case 1: //lijst/apart
-		x = 68; y = yr1; xe = 96; ye = yr1;
+		x = 68; y = yr1; w = 30;
 		break;
 	case 2://loc
-		x = 0; y = yr2; xe = 20; ye = yr2;
+		x = 0; y = yr2; w = 20;
 		break;
 	case 3://loc R
-		x = 26; y = yr2; xe = x + 10; ye = yr2;
+		x = 26; y = yr2; w = 14;
 		break;
 	case 4: //loc Functions
-		x = 45; ; y = yr2, xe = x + 10, ye = yr2;
+		x = 45; ; y = yr2, w = 14;
 		break;
 	case 5://loc CV
-		x = 67; y = yr2; xe = x + 18; ye = yr2;
+		x = 67; y = yr2; w = 20;
 		break;
 	case 6: //Accessoires
-		x = 0; y = y = yr3; xe = x + 20; ye = yr3;
+		x = 0; y = y = yr3; w = 20;
 		break;
 	case 7: //accessoire S
-		x = 26; y = yr3; xe = x + 10; ye = yr3;
+		x = 26; y = yr3; w = 14;
 		break;
 	case 8: //accessoire Puls
-		x = 45; y = yr3; xe = x + 10; ye = yr3;
+		x = 45; y = yr3; w = 14;
 		break;
 	case 9: //Accessoire CV
-		x = 67; y = yr3; xe = x + 20; ye = yr3;
+		x = 67; y = yr3; w = 20;
 		break;
 	case 10: //aut/man
-		x = 0; y = yr4; xe = x + 20; ye = yr4;
+		x = 0; y = yr4; w = 20;
 		break;
 	case 11://tijd
-		x = 26; y = yr4; xe = x + 20; ye = yr4;
+		x = 26; y = yr4; w = 24;
 		break;
-	case 12:
-		x = 67; y = yr4; xe = x + 20; ye = yr4;
+	case 12: //keuze output
+		x = 0; y = yr5; w = 30;
 		break;
+	case 13: //keuze output
+		x = 45; y = yr5; w = 7;
+		break;
+	case 14: //keuze output
+		x = 53; y = yr5; w = 20;
+		break;
+
+
 	}
-	dp.drawLine(x, y, xe, ye, 1);
+	dp.drawFastHLine(x, y, w, 1);
+
 }
 void ParaUp() {
 	switch (prgfase) {
@@ -550,7 +591,8 @@ void ParaDown() {
 		if (preset[Prst].time > Maxtime)preset[Prst].time = 1;
 		break;
 	case 12:
-		preset[Prst].reg ^= (1 << 3); //Dec (decoder, default) of Mon  (monitor)
+		preset[Prst].outputType ++;
+		if (preset[Prst].outputType > 3)preset[Prst].outputType = 0;
 		break;
 	case 13:
 		break;
@@ -886,7 +928,7 @@ void Write_AccCV(int adr) {
 
 	bfr[buffer].adres = adr;
 	bfr[buffer].reg = B11001000, //bit7 active bit6 accessoire bit 3 CV msg
-	bfr[buffer].instructie = data[1];
+		bfr[buffer].instructie = data[1];
 	bfr[buffer].adresbyte = data[0];
 	bfr[buffer].db[0] = data[2];
 	bfr[buffer].db[1] = data[3];
@@ -1093,12 +1135,12 @@ bool IO_dp() { //displays msg's
 	//afsluiting
 
 	if (~preset[Prst].reg & (1 << 3)) {
-	out[0] = bfr[Bcount].adresbyte;
-	out[1] = bfr[Bcount].instructie;
-	output();
-	PORTD |= (1 << 5);
-	}	
-	
+		out[0] = bfr[Bcount].adresbyte;
+		out[1] = bfr[Bcount].instructie;
+		output();
+		PORTD |= (1 << 5);
+	}
+
 	bfr[Bcount].reg &= ~(1 << 7); // buffer vrijgeven
 	//dp.display();
 	return false;
@@ -1283,11 +1325,21 @@ void TXT(byte n) {
 		dp.print(F("ms"));
 		break;
 	case 15:
-		dp.print(F("Mon"));
+		dp.print(F("MFD"));
 		break;
 	case 16:
-		dp.print(F("Dec"));
+		dp.print(F("BAD"));
 		break;
+	case 17:
+		dp.print(F("***"));
+		break;
+	case 18:
+		dp.print(F("-"));
+		break;
+	case 19:
+		dp.print(F(">:"));
+		break;
+
 	}
 }
 
