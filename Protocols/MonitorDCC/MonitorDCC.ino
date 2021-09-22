@@ -24,7 +24,7 @@ char version[] = "V 1.01"; //Openingstekst versie aanduiding
 #define Psize 4 //aantal presets
 #define autoDelete 10000 //tijd voor autodelete buffer inhoud 10sec
 #define Maxtime 50 //max tijd in 100ms voor wachten tussen tonen msg's
-#define PFsize  15 //aantal programfases
+#define PFsize  14 //aantal programfases
 
 
 //verkortingen 
@@ -38,10 +38,10 @@ struct presets {
 	//bit0 True: Toon aan en uit msg, false: toon alleen uit met pulsduur
 	//bit1	True : Toon lijst onder elkaar, of false : 1 grote msg.
 	//bit2	true: Tijd  (default 1sec)  False: manual  afroep volgend msg
-	//bit3 
+	//bit3 true default in *** mode converter alleen 
 	//bit4 
 	//bit5  
-	//bit6: true: in converter alleen 4 decoders (aantal decoders???????)
+	//bit6:
 
 	byte filter; //welke msg verwerken, true is verwerken, false is overslaan
 	//bit0 //loc
@@ -54,7 +54,10 @@ struct presets {
 	//bit7
 	byte time; //tijd tussen tonen van msg in stappen van 100ms 10=1sec.Default
 	byte outputType; //0=out 1=bad accessoire 2=mf locs 3=converter, parallel out
-	int adres;
+	unsigned int adres;
+	//adres in Bad basic accessoire is het DECODER adres dus, in MFD het dcc adres, loc adres, in converter ***
+	//is het het hoogst doorgelaten decoderadres naar de converter, hiermee kunnen de hogere bits in het adres
+	//worden uitgefilterd.
 };
 presets preset[Psize];
 byte Prst; //huidig actief preset
@@ -119,7 +122,7 @@ void MEM_read() {
 		if (preset[i].time == 0xFF)preset[i].time = 5; //default 0,5 seconde
 		preset[i].outputType = EEPROM.read(t + 3);
 		if (preset[i].outputType > 3)preset[i].outputType = 0;
-		EEPROM.get(t + 5, preset[i].adres);
+		EEPROM.get(t + 6, preset[i].adres);
 		if (preset[i].adres == 0xFFFF)preset[i].adres = 1;
 	}
 }
@@ -129,7 +132,7 @@ void MEM_write() {
 	EEPROM.update(200 + (Prst * 20) + 1, preset[Prst].reg);
 	EEPROM.update(200 + (Prst * 20) + 2, preset[Prst].time);
 	EEPROM.update(200 + (Prst * 20) + 3, preset[Prst].outputType);
-	EEPROM.put(200 + (Prst * 20) + 5, preset[Prst].outputType);
+	EEPROM.put(200 + (Prst * 20) + 6, preset[Prst].adres);
 }
 void setup() {
 	//start processen
@@ -271,16 +274,10 @@ void SW_exe() {
 	//hold pressed for scroll function
 
 	if (~read & (1 << 2) && GPIOR0 & (1 << 4)) { //sw3 en scroll toegestaan 
-		Serial.print("+");
-		if (SW_holdcounter > 30) { //tijdxslowtimer voor scroll begint, tempo scroll komt uit loop, slowevents slowtimer
-			SW_on(2);
-		}
-		else {
-			SW_holdcounter++;
-		}
+		//Serial.print("+");
+		if (SW_holdcounter < 70)SW_holdcounter++;
+		if (SW_holdcounter > 30)SW_on(2);		
 	}
-
-
 	SW_status = read;
 }
 void SW_on(byte sw) {
@@ -298,7 +295,6 @@ void SW_on(byte sw) {
 	case 1:
 		if (program) { //program stand
 			GPIOR0 &= ~(1 << 4); //disable scroll button 2
-
 			switch (prgfase) {
 			case 2:
 				if (~preset[Prst].filter & (1 << 0))prgfase = 5;
@@ -313,6 +309,9 @@ void SW_on(byte sw) {
 				else {
 					GPIOR0 |= (1 << 4);
 				}
+				break;
+			case 12:
+				GPIOR0 |= (1 << 4); //scroll enable on sw 3
 				break;
 			}
 			prgfase++;
@@ -329,9 +328,6 @@ void SW_on(byte sw) {
 		if (program) {
 			ParaDown();
 			DP_prg();
-		}
-		else {
-
 		}
 		break;
 
@@ -422,11 +418,11 @@ void DP_prg() { //iedere keer geheel vernieuwen?
 	}
 	//regel 5 	
 	y = 42;
-//keuze monitor/decoder
+	//keuze monitor/decoder
 	setText(x[0], y, 1);
 	TXT(19);
 	switch (preset[Prst].outputType) { //1=bad 2=MFD 3=par ***
-	case 0:		
+	case 0:
 		break;
 	case 1:
 		TXT(16);
@@ -437,10 +433,10 @@ void DP_prg() { //iedere keer geheel vernieuwen?
 	case 3:
 		TXT(17);
 		break;
-}
+	}
 	//adres output (default 1)
-	drawCheck(x[2], y, false); // preset[Prst].filter & (1 << 6));
-	setText(x[2]+8, y, 1);
+	setText(x[2], y, 1);
+	TXT(20); //Adr:
 	dp.print(preset[Prst].adres);
 
 
@@ -499,13 +495,8 @@ void DP_cursor() {
 		x = 0; y = yr5; w = 30;
 		break;
 	case 13: //keuze output
-		x = 45; y = yr5; w = 7;
+		x = 45; y = yr5; w = 40;
 		break;
-	case 14: //keuze output
-		x = 53; y = yr5; w = 20;
-		break;
-
-
 	}
 	dp.drawFastHLine(x, y, w, 1);
 
@@ -550,7 +541,6 @@ void ParaUp() {
 
 }
 void ParaDown() {
-
 	switch (prgfase) {
 	case 0:
 		Prst++;
@@ -586,23 +576,33 @@ void ParaDown() {
 	case 10:
 		preset[Prst].reg ^= (1 << 2); //aut of man msg tonen
 		break;
-	case 11:
+	case 11: //tijd tussen twee commands
 		preset[Prst].time++;
 		if (preset[Prst].time > Maxtime)preset[Prst].time = 1;
 		break;
-	case 12:
-		preset[Prst].outputType ++;
+	case 12: //output type
+		preset[Prst].outputType++;
+
 		if (preset[Prst].outputType > 3)preset[Prst].outputType = 0;
-		break;
-	case 13:
-		break;
-	case 14:
-		break;
-	case 15:
-		break;
+		preset[Prst].adres = 1; //veranderen output types geeft reset adres
+		if (preset[Prst].outputType == 3)preset[Prst].adres = 512;
 
+		break;
+	case 13: //adres
+		int t = 512;
+		if (preset[Prst].outputType > 0) {
+
+			if (preset[Prst].outputType == 2)t = 9999;
+			if (SW_holdcounter > 60) {
+				preset[Prst].adres +=10;
+			}
+			else {
+				preset[Prst].adres++;
+			}			
+			if (preset[Prst].adres > t)preset[Prst].adres = 1;
+		}
+		break;
 	}
-
 }
 //terugmeldingen (callback) uit libraries (NmraDCC)
 void notifyDccMsg(DCC_MSG * Msg) {
@@ -706,7 +706,6 @@ void checkBuffer() {
 	}
 	if (GPIOR0 & (1 << 1))PIND |= (1 << 4);
 }
-
 
 void Loc(bool t) {
 
@@ -916,7 +915,6 @@ void Debug_bfr(bool n, byte buffer) {
 	Serial.print(" db2:"); Serial.print(bfr[buffer].db[2], BIN);
 	Serial.print("  Tijd:"); Serial.println(bfr[buffer].tijd);
 }
-
 void Write_AccCV(int adr) {
 	Serial.println("cv");
 	//schrijft een Accesoire CV in een buffer, deze msg wordt niet herhaald dus geen routine nodig
@@ -966,10 +964,15 @@ void Write_Acc(int adr, byte reg) { //called from 'notifyDccMsg()'
 //IO alles met de uitvoer van de ontvangen msg. periodiek of manual
 void IO_exe() { //toont een buffer, called manual, time, or direct from loop.
 	bool read = true; byte count = 0;
-	//clear outs
-	outputClear();
-	out[0] = 0; out[1] = 0;
-	PORTD &= ~(1 << 5);
+
+	if (preset[Prst].outputType == 3) {
+		//clear outs
+		outputClear();
+		out[0] = 0; out[1] = 0;
+		PORTD &= ~(1 << 5);
+	}
+
+
 
 	while (read) {
 		if (bfr[Bcount].reg & (1 << 7)) read = IO_dp(); //Alleen als bfr[].reg bit7=true
@@ -1134,7 +1137,7 @@ bool IO_dp() { //displays msg's
 
 	//afsluiting
 
-	if (~preset[Prst].reg & (1 << 3)) {
+	if (preset[Prst].outputType = 3) {
 		out[0] = bfr[Bcount].adresbyte;
 		out[1] = bfr[Bcount].instructie;
 		output();
@@ -1339,7 +1342,9 @@ void TXT(byte n) {
 	case 19:
 		dp.print(F(">:"));
 		break;
-
+	case 20:
+		dp.print(F("Adr:"));
+		break;
 	}
 }
 
