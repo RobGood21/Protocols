@@ -198,14 +198,14 @@ void DP_welcome() {
 void DP_monitor() { //maakt display schoon, toont output bytes
 	dp.clearDisplay();
 	dp.drawFastHLine(0, 55, 128, 1);
+	if (preset[Prst].outputType == 1)output();
 	dp.display();
 }
 
 void output() {
 	outputClear();
 	byte x = 0; byte bte = 0;
-	//out[0]=17;
-		//onderbalk met 2 plus 4xnibble output bytes
+	//out[0]=17;//onderbalk met 2 plus 4xnibble output bytes
 	for (byte i = 0; i < 16; i++) {
 		if (i > 7)bte = 1;
 		if (out[bte] & (1 << 7 - (i - (bte * 8)))) {
@@ -217,6 +217,7 @@ void output() {
 		if (i == 3 || i == 11)x += 3;
 		if (i == 7)x += 6;
 	}
+	if (preset[Prst].outputType == 1)dp.display();
 }
 
 void outputClear() {
@@ -276,7 +277,7 @@ void SW_exe() {
 	if (~read & (1 << 2) && GPIOR0 & (1 << 4)) { //sw3 en scroll toegestaan 
 		//Serial.print("+");
 		if (SW_holdcounter < 70)SW_holdcounter++;
-		if (SW_holdcounter > 30)SW_on(2);		
+		if (SW_holdcounter > 30)SW_on(2);
 	}
 	SW_status = read;
 }
@@ -594,11 +595,11 @@ void ParaDown() {
 
 			if (preset[Prst].outputType == 2)t = 9999;
 			if (SW_holdcounter > 60) {
-				preset[Prst].adres +=10;
+				preset[Prst].adres += 10;
 			}
 			else {
 				preset[Prst].adres++;
-			}			
+			}
 			if (preset[Prst].adres > t)preset[Prst].adres = 1;
 		}
 		break;
@@ -647,6 +648,30 @@ void notifyDccMsg(DCC_MSG * Msg) {
 		if (bte & (1 << 3))reg |= (1 << 0); //onoff
 		if (bte & (1 << 0))reg |= (1 << 1);//false=rechtdoor, true = afslaan
 		reg |= (1 << 6); //accessoire	
+
+
+		//Afhandelen output in BAD mode
+		if (preset[Prst].outputType == 1) {
+			byte ad = (adr + 3) / 4;
+			//Serial.print(ad);
+			if (ad >= preset[Prst].adres && ad < preset[Prst].adres + 4) {
+				if (data[1] & (1 << 3)) { //Alleen aan msg verwerken
+					ad = ad - (preset[Prst].adres - 1); //adres filter toepassen
+					byte ch = data[1] << 5; ch = ch >> 6; //channel isoleren
+					byte bte = 0;
+					if (ad > 2)bte = 1;
+					if (ad == 2 || ad == 4)ch += 4;
+					Serial.println(ch);
+					if (~data[1] & (1 << 0)) {
+						out[bte] &= ~(1 << 7-ch);
+					}
+					else {
+						out[bte] |= (1 << 7-ch);
+					}
+					output();
+				}
+			}
+		}
 
 		if ((data[2] >> 2) == B111011) { // zou problemen kunnen geven?
 			reg |= (1 << 3);  //("CV");
@@ -938,7 +963,6 @@ void Write_AccCV(int adr) {
 void Write_Acc(int adr, byte reg) { //called from 'notifyDccMsg()'
 
 	///Serial.println("**");
-
 	byte Treg = reg; byte buffer;
 	bool nieuw = true; Treg |= (1 << 7);
 	for (byte i = 0; i < Bsize; i++) {
@@ -1049,7 +1073,10 @@ bool IO_dp() { //displays msg's
 		yR[0] = 0; yR[1] = 0; yR[2] = 0;
 	}
 	else { //single msg
-		DP_monitor();
+		//wis bovendeel disokay
+		dp.fillRect(0, 0, 128, 55, 0);
+
+		//DP_monitor();		
 		s = 2; //Size objecten
 		xE[0] = 2; xE[1] = 40; xE[2] = 5; xE[3] = 30; xE[4] = 85;
 		yR[0] = 3; yR[1] = 22; yR[2] = 40;
@@ -1135,15 +1162,20 @@ bool IO_dp() { //displays msg's
 		}
 	}
 
-	//afsluiting
 
-	if (preset[Prst].outputType = 3) {
-		out[0] = bfr[Bcount].adresbyte;
-		out[1] = bfr[Bcount].instructie;
-		output();
-		PORTD |= (1 << 5);
+	//output 
+	if (preset[Prst].outputType == 3) { //converter mode
+		//decoder adres bepalen
+		int da = (bfr[Bcount].adres + 3) / 4;
+		if (preset[Prst].adres >= da) { //adres hoog-af filter
+			out[0] = bfr[Bcount].adresbyte;
+			out[1] = bfr[Bcount].instructie;
+			output();
+			PORTD |= (1 << 5);
+		}
 	}
 
+	//afsluiting
 	bfr[Bcount].reg &= ~(1 << 7); // buffer vrijgeven
 	//dp.display();
 	return false;
