@@ -86,6 +86,7 @@ int T_adres = 0; //tijdelijk adres
 byte T_instructie = 0; //Tijdelijk opslag instructie byte
 byte T_db[2]; //Tijdelijke opslag
 byte out[2]; //
+byte locStatus[4];
 unsigned long AutTime;
 byte countautodelete; //gebruik in checkBuffer
 
@@ -631,8 +632,9 @@ void notifyDccMsg(DCC_MSG * Msg) {
 	}
 	else if (db < 192) {//Basic Accessory Decoders with 9 bit addresses and Extended Accessory
 		//filter monitor accessoires
-		if (~preset[Prst].filter & (1 << 4))return; //stop als filter = false						
-		//decoder adres bepalen
+
+		//if (~preset[Prst].filter & (1 << 4))return; //stop als filter = false						
+		//decoder adres bepalen		
 		bte = db;
 		bte = bte << 2; adr = bte >> 2; //clear bit7 en 6
 		bte = data[1];
@@ -649,7 +651,6 @@ void notifyDccMsg(DCC_MSG * Msg) {
 		if (bte & (1 << 0))reg |= (1 << 1);//false=rechtdoor, true = afslaan
 		reg |= (1 << 6); //accessoire	
 
-
 		//Afhandelen output in BAD mode
 		if (preset[Prst].outputType == 1) {
 			byte ad = (adr + 3) / 4;
@@ -663,15 +664,18 @@ void notifyDccMsg(DCC_MSG * Msg) {
 					if (ad == 2 || ad == 4)ch += 4;
 					Serial.println(ch);
 					if (~data[1] & (1 << 0)) {
-						out[bte] &= ~(1 << 7-ch);
+						out[bte] &= ~(1 << 7 - ch);
 					}
 					else {
-						out[bte] |= (1 << 7-ch);
+						out[bte] |= (1 << 7 - ch);
 					}
 					output();
 				}
 			}
 		}
+
+		//filter naar buffers hier toepassen 23sept
+		if (~preset[Prst].filter & (1 << 4))return; //stop als filter = false		
 
 		if ((data[2] >> 2) == B111011) { // zou problemen kunnen geven?
 			reg |= (1 << 3);  //("CV");
@@ -733,10 +737,10 @@ void checkBuffer() {
 }
 
 void Loc(bool t) {
-
 	//000, 001, 110 not on this project V1.01 sept 2021 
 	//instr = data[2] >> 5; //010=reversed 011=forward 100=F1 101=F2 111=CV 
-	if (~preset[Prst].filter & (1 << 0))return; //Filter voor Loc msg
+
+	//if (~preset[Prst].filter & (1 << 0))return; //Filter voor Loc msg
 
 	if (t) { //7 bits adres
 		T_adres = data[0];
@@ -756,44 +760,58 @@ void Loc(bool t) {
 		T_db[0] = data[3];
 		T_db[1] = data[4];
 	}
+	if (preset[Prst].outputType == 2) {
+		if (preset[Prst].adres == T_adres)LocDec();
+	}
 
 	//Drive/function or CV
-	bool nt = true;
+	//bool nt = true;
 	switch (T_instructie >> 5) {
 	case B010:
-		if (preset[Prst].filter & (1 << 1)) {
-			nt = false;
-			LocMsg(1);
-		}
+		if (preset[Prst].filter & (1 << 1))	LocMsg(1);
 		break;
 	case B011:
-		if (preset[Prst].filter & (1 << 1)) {
-			nt = false;
-			LocMsg(1);
-		}
+		if (preset[Prst].filter & (1 << 1))LocMsg(1);
 		break;
 	case B100:
-		if (preset[Prst].filter & (1 << 2)) {
-			nt = false;
-			LocMsg(2);
-		}
+		if (preset[Prst].filter & (1 << 2))LocMsg(2);
 		break;
 	case B101:
-		if (preset[Prst].filter & (1 << 2)) {
-			nt = false;
-			LocMsg(3);
-		}
+		if (preset[Prst].filter & (1 << 2))LocMsg(3);
 		break;
 	case B111:
-		if (preset[Prst].filter & (1 << 3)) {
-			nt = false;
-			LocMsgCV();
-		}
+		if (preset[Prst].filter & (1 << 3))LocMsgCV();
 		break;
 	}
-	if (nt)return; //deze msg niks mee doen
+}
+
+void LocDec() {
+	//T_instruction;
+	//Serial.println(T_instructie); 
+	//locStatus[4] 0=byte 1 1=byte 2 2=oude status 1 3=oude status 2
+	switch (T_instructie >> 5) {
+	case B010: //reverse
+		locStatus[0] |= (1 << 5);
+		locStatus[0] &= ~(1 << 6);
+		break;
+	case B011: //forward
+		locStatus[0] |= (1 << 6);
+		locStatus[0] &= ~(1 << 5);
+		break;
+	case B100: //function group I FL F1~F4
+		break;
+	case B101: //function group II F5~F12
+		break;
+	}
+	if ((locStatus[0] ^ locStatus[2]) + (locStatus[1] ^ locStatus[3]) > 0) {
+		Serial.print(locStatus[0], BIN); Serial.print("   "); Serial.println(locStatus[1], BIN);
+	}
+	locStatus[2] = locStatus[0]; locStatus[3] = locStatus[1];
 }
 void LocMsgCV() {
+
+	if (~preset[Prst].filter & (1 << 0))return; //Filter voor Loc msg
+
 	//Maak nieuw message Loc CV 
 	Serial.print("cv");
 	byte buffer = FreeBfr();
@@ -810,6 +828,9 @@ void LocMsg(byte tiep) { //called from loc() 1=drive 2=function 1 3 = function2
 	//000, 001, 110 not on this project V1.01 sept 2021  (misschien wel een melding tonen op display bij zo een msg?)
 	//bepaal soort msg 010=reversed 011=forward 100=F1 101=F2 111=CV en filter of getoond moet worden
 	//gebruik GPIOR2 as temp byte
+
+	if (~preset[Prst].filter & (1 << 0))return; //Filter voor Loc msg
+
 	for (byte i = 0; i < Bsize; i++) {
 		if ((~bfr[i].reg & (1 << 6)) && (bfr[i].adres == T_adres) && (bfr[i].reg & (1 << 2))) { //drive msg/functions
 			//check type ontvangen instructie (RegI)
@@ -995,8 +1016,6 @@ void IO_exe() { //toont een buffer, called manual, time, or direct from loop.
 		out[0] = 0; out[1] = 0;
 		PORTD &= ~(1 << 5);
 	}
-
-
 
 	while (read) {
 		if (bfr[Bcount].reg & (1 << 7)) read = IO_dp(); //Alleen als bfr[].reg bit7=true
