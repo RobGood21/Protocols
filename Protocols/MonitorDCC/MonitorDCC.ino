@@ -86,7 +86,7 @@ int T_adres = 0; //tijdelijk adres
 byte T_instructie = 0; //Tijdelijk opslag instructie byte
 byte T_db[2]; //Tijdelijke opslag
 byte out[2]; //
-byte locStatus[4];
+byte locStatus[4]; byte SpeedStatus[2];
 unsigned long AutTime;
 byte countautodelete; //gebruik in checkBuffer
 
@@ -218,7 +218,7 @@ void output() {
 		if (i == 3 || i == 11)x += 3;
 		if (i == 7)x += 6;
 	}
-	if (preset[Prst].outputType == 1)dp.display();
+	if (preset[Prst].outputType == 2 )dp.display();
 }
 
 void outputClear() {
@@ -793,20 +793,50 @@ void LocDec() {
 	case B010: //reverse
 		locStatus[0] |= (1 << 5);
 		locStatus[0] &= ~(1 << 6);
+		SpeedStatus[0] = spd(T_instructie);
 		break;
 	case B011: //forward
 		locStatus[0] |= (1 << 6);
 		locStatus[0] &= ~(1 << 5);
+		SpeedStatus[0] = spd(T_instructie);
 		break;
 	case B100: //function group I FL F1~F4
+		//head lights
+		if (T_instructie & (1 << 4)) {
+			locStatus[0] |= (1 << 4);
+		}
+		else {
+			locStatus[0] &= ~(1 << 4);
+		}
+		GPIOR2 = T_instructie << 4; GPIOR2 = GPIOR2 >> 4; //isolate bit 0~3
+		locStatus[0] &= ~(15 << 0); //clear bit 0~3
+		for (byte i = 0; i < 4; i++) {
+			if (GPIOR2 & (1 << i))locStatus[0] |= (1 << (3 - i));
+		}
 		break;
-	case B101: //function group II F5~F12
+	case B101: //function group II F5~F12		
+		GPIOR2 = T_instructie;
+		if (GPIOR2 & (1 << 4)) { //groep 2 F5~F8
+			locStatus[1] &=~(B11110000 << 0); //clear bits 7~5
+			for (byte i = 0; i < 4; i++) {
+				if (GPIOR2 & (1 << i))locStatus[1] |= (1 << (7 - i));
+			}
+		}
+		else { //groep 3 F9~F12
+			locStatus[1] &= ~(15 << 0);
+			for (byte i = 0; i < 4; i++) {
+				if (GPIOR2 & (1 << i))locStatus[1] |= (1 << (3 - i));
+			}
+		}
 		break;
 	}
-	if ((locStatus[0] ^ locStatus[2]) + (locStatus[1] ^ locStatus[3]) > 0) {
-		Serial.print(locStatus[0], BIN); Serial.print("   "); Serial.println(locStatus[1], BIN);
+
+	if ((locStatus[0] ^ locStatus[2]) + (locStatus[1] ^ locStatus[3]) + (SpeedStatus[0] ^ SpeedStatus[1]) > 0) {
+		//Serial.print(SpeedStatus[0]); Serial.print("   "); Serial.print(locStatus[0], BIN); Serial.print("   "); Serial.println(locStatus[1], BIN);
+		out[0] = locStatus[0]; out[1] = locStatus[1];
+		output();
 	}
-	locStatus[2] = locStatus[0]; locStatus[3] = locStatus[1];
+	locStatus[2] = locStatus[0]; locStatus[3] = locStatus[1]; SpeedStatus[1] = SpeedStatus[0];
 }
 void LocMsgCV() {
 
@@ -1075,14 +1105,19 @@ bool IO_dp() { //displays msg's
 			else {
 				symbolE[1] = 22;
 			}
+
+
 			//snelheidsstap bepalen, altijd denkend CV#29 bit1=true 28snelheidsstappen.
 			//Xtra digitale snelheidstrap 128stappen nog niet 16sept2021
-			GPIOR2 = bfr[Bcount].instructie << 4;
-			GPIOR2 = GPIOR2 >> 4; //clear bit 7,6,5,4
-			if (GPIOR2 > 1) {
-				speed = (GPIOR2 - 1) * 2;
-			}
-			if (~bfr[Bcount].instructie & (1 << 4)) speed--;
+			//GPIOR2 = bfr[Bcount].instructie << 4;
+			//GPIOR2 = GPIOR2 >> 4; //clear bit 7,6,5,4
+			//if (GPIOR2 > 1) {
+			//	speed = (GPIOR2 - 1) * 2;
+			//}
+			//if (~bfr[Bcount].instructie & (1 << 4)) speed--;
+			speed = spd(bfr[Bcount].instructie);
+
+
 		}
 	}
 	//scherm type instellen apart of een lijst
@@ -1198,6 +1233,18 @@ bool IO_dp() { //displays msg's
 	bfr[Bcount].reg &= ~(1 << 7); // buffer vrijgeven
 	//dp.display();
 	return false;
+}
+byte spd(byte data) {
+	//berekend de DCC28 snelheids stap CV#29 bit1 =true
+	//128stappen nog niet 16sept2021 ondersteund.
+	byte speed = 0;
+	GPIOR2 = data << 4;
+	GPIOR2 = GPIOR2 >> 4; //clear bit 7,6,5,4
+	if (GPIOR2 > 1) {
+		speed = (GPIOR2 - 1) * 2;
+	}
+	if (~data & (1 << 4)) speed--;
+	return speed;
 }
 void functions(byte x, byte y) {
 	byte z = 12;
