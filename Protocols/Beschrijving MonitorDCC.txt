@@ -27,7 +27,7 @@ bit1 false ruimte in buffer, true buffer vol (rode led?)
 bit2 false monitor, true programmeer scherm
 bit3 flag gebruikt in Loc()
 bit4 true:Scroll van knop2 false:geen scrol van knop2
-bit5
+bit5 True: monitor instellen eenmalig na powerup
 bit6
 bit7
 

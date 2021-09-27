@@ -48,7 +48,6 @@ struct presets {
 	//bit4 
 	//bit5  
 	//bit6:
-
 	byte filter; //welke msg verwerken, true is verwerken, false is overslaan
 	//bit0 //loc
 	//bit1 //speed, direction 'R''
@@ -104,9 +103,6 @@ unsigned long slowtimer;
 //variabelen schakelaars
 byte SW_status = 15; //holds the last switch status, start as B00001111;
 byte SW_holdcounter; //for scroll functie op buttons
-byte SW_scroll = B0000; //masker welke knoppen kunnen scrollen 1=wel 0=niet
-//tbv decoder NmrraDCC
-//byte uniek = 0xFF;
 byte slowcount;
 
 void MEM_read() {
@@ -136,40 +132,41 @@ void MEM_write() {
 	EEPROM.put(200 + (Prst * 20) + 6, preset[Prst].adres);
 }
 void setup() {
+	
+
+
 	//start processen
 	Serial.begin(9600);
 	dp.begin(SSD1306_SWITCHCAPVCC, 0x3C);
 	Dcc.pin(0, 2, 1); //interupt number 0; pin 2; pullup to pin2
 	Dcc.init(MAN_ID_DIY, 10, 0b10000000, 0); //bit6 false, decoder adres callback 'notifyDccAccTurnoutBoard'
 	//bit 7 maakt er een loc decoder van
-
 	//poorten	
 	DDRC &= ~B00001111;
 	PORTC |= B00001111;
-	DDRD |= (1 << 3); DDRD |= (1 << 4); //groene en rode  leds
+
+	DDRD |= (1 << 3);
+	DDRD |= (1 << 4); //groene en rode  leds
 	DDRD |= (1 << 5); //blauwe led command op output
+
+
 
 	DDRB |= (1 << 0); //PIN8 serial out
 	DDRB |= (1 << 1); //PIN9 Shift clock
 	DDRB |= (1 << 2); //PIN10 Shift latch
+  //reset, factory knop 0+3
+	//delay(10);
+	out[0] = 0; out[1] = 0; output();
 
-
-	//reset, factory knop 0+3
-	delay(10);
 	if (~PINC & (1 << 0) && ~PINC & (1 << 3))factory();
 	DP_welcome(); //toon opening text
-
 	delay(1000);
-
 	MEM_read();
-	DP_monitor();
-	out[0] = 0; out[1] = 0; output();
+	GPIOR0 |= (1 << 5);
+	DDRD |= (1 << 6); //OE output enabled van de shifts, zorgen dat er geen spookpulsen op de outputs komen
+	//DP_monitor();
 }
 void shift() {
-	Serial.print(out[0]); Serial.print("   "); Serial.println(out[1]);
-	//PORTB &= ~(3 << 1); //clear portb pin 9 en 10
-	//pin8 serial, pin9 shift, pin10 latch 
-	//shift out[0] en out[1] in de shiftregisters
 	for (byte b = 0; b < 2; b++) {
 		for (byte i = 0; i < 8; i++) {
 			PORTB &= ~(1 << 0); //reset pin 8
@@ -207,11 +204,11 @@ void DP_welcome() {
 void DP_monitor() { //maakt display schoon, toont output bytes
 	dp.clearDisplay();
 	dp.drawFastHLine(0, 55, 128, 1);
-	if (preset[Prst].outputType == 1)output();
+	if (preset[Prst].outputType > 0)output();
 	dp.display();
 }
 void output() {
-shift();
+	shift();
 	outputClear();
 	byte x = 0; byte bte = 0;
 	//out[0]=17;//onderbalk met 2 plus 4xnibble output bytes
@@ -228,7 +225,7 @@ shift();
 	}
 
 	if (preset[Prst].outputType < 3)dp.display();
-	
+
 }
 void outputClear() {
 	dp.fillRect(0, 57, 128, 7, 0);
@@ -264,9 +261,7 @@ void loop() {
 void SW_exe() {
 	byte changed = 0; byte read = 0;
 	read = PINC;
-	read = read << 4;
-	read = read >> 4; //isoleer bit0~bit3	
-
+	read = read << 4;read = read >> 4; //isoleer bit0~bit3	
 	//pressed or released
 	changed = read ^ SW_status;
 	if (changed > 0) {
@@ -282,7 +277,6 @@ void SW_exe() {
 		}
 	}
 	//hold pressed for scroll function
-
 	if (~read & (1 << 2) && GPIOR0 & (1 << 4)) { //sw3 en scroll toegestaan 
 		//Serial.print("+");
 		if (SW_holdcounter < 70)SW_holdcounter++;
@@ -342,28 +336,13 @@ void SW_on(byte sw) {
 		break;
 
 	case 3: //knop 3 NIET gebruiken voor program????
-		if (program) {
-			//ParaUp();
-			//DP_prg();
-		}
-		else {
-			if (~preset[Prst].reg & (1 << 2))IO_exe();
-		}
+		if (~program) if (~preset[Prst].reg & (1 << 2))IO_exe();		
 		break;
 
 	}
 }
 void SW_off(byte sw) {
 	if (sw == 2)SW_holdcounter = 0; //reset counter for scroll function 
-/*
-	//Test schakelaars
-	dp.clearDisplay();
-	dp.setTextColor(WHITE);
-	dp.setCursor(10, 30);
-	dp.setTextSize(2);
-	dp.print("Off "); dp.print(sw);
-	dp.display();
-*/
 }
 void DP_prg() { //iedere keer geheel vernieuwen?
 	//toont programmeer blad (6 regels?)
@@ -371,16 +350,15 @@ void DP_prg() { //iedere keer geheel vernieuwen?
 	byte y = 0; //regel afstand verticaal
 	byte x[4] = { 0,26,45,68 };
 	dp.clearDisplay();
-	dp.setTextSize(1); dp.setTextColor(1);
 	//regel 1
-	dp.setCursor(0, y);
-	dp.print(F("Preset:")); dp.print(Prst + 1);
+	setText(0, y, 1);
+	TXT(5);	dp.print(Prst + 1);
 	dp.setCursor(x[3], y);
 	if (preset[Prst].reg & (1 << 1)) { //lijst
-		dp.print(F("Lijst"));
+		TXT(6);
 	}
 	else { //enkel
-		dp.print(F("Apart"));
+		TXT(7);
 	}
 	//regel 2 
 	y = 12;
@@ -395,7 +373,6 @@ void DP_prg() { //iedere keer geheel vernieuwen?
 		drawCheck(x[3], y, preset[Prst].filter & (1 << 3));
 		dp.setCursor(x[3] + 8, y); dp.print(F("CV")); //CV voor de loc
 	}
-
 	//regel 3
 	y = 22;
 	drawCheck(x[0], y, preset[Prst].filter & (1 << 4)); //check toon artikelen
@@ -448,15 +425,6 @@ void DP_prg() { //iedere keer geheel vernieuwen?
 	setText(x[2], y, 1);
 	TXT(20); //Adr:
 	dp.print(preset[Prst].adres);
-
-
-
-	//regel 6
-	y = 52;
-
-
-
-
 	DP_cursor();
 	dp.display();
 }
@@ -511,45 +479,6 @@ void DP_cursor() {
 	dp.drawFastHLine(x, y, w, 1);
 
 }
-void ParaUp() {
-	switch (prgfase) {
-	case 0:
-		break;
-	case 1:
-
-		break;
-	case 2:
-		break;
-	case 3:
-		break;
-	case 4:
-		break;
-	case 5:
-		break;
-	case 6:
-		break;
-	case 7:
-		break;
-	case 8:
-		break;
-	case 9:
-		break;
-	case 10:
-		break;
-	case 11:
-		break;
-	case 12:
-		break;
-	case 13:
-		break;
-	case 14:
-		break;
-	case 15:
-		break;
-
-	}
-
-}
 void ParaDown() {
 	switch (prgfase) {
 	case 0:
@@ -592,11 +521,12 @@ void ParaDown() {
 		break;
 	case 12: //output type
 		preset[Prst].outputType++;
-
 		if (preset[Prst].outputType > 3)preset[Prst].outputType = 0;
 		preset[Prst].adres = 1; //veranderen output types geeft reset adres
 		if (preset[Prst].outputType == 3)preset[Prst].adres = 512;
-
+		//clear outputs
+		out[0] = 0; out[1] = 0; shift(); outputClear();
+		PORTD &= ~(1 << 5); 
 		break;
 	case 13: //adres
 		int t = 512;
@@ -631,6 +561,14 @@ void notifyDccMsg(DCC_MSG * Msg) {
 	}
 
 	//byte db;  
+	if (GPIOR0 & (1 << 5)) {
+		if (data[0] != 255) {
+			DP_monitor();
+			GPIOR0 &= ~(1 << 5);
+		}
+	}
+
+
 	byte bte;  int adr = 0; byte reg = 0; //verdelen op soort msg op basis van 1e byte
 	//db = data[0];
 	if (data[0] == 0) {	//broadcast voor alle decoder bedoeld
@@ -700,10 +638,6 @@ void notifyDccMsg(DCC_MSG * Msg) {
 	else {
 		//adress=255 idle packett
 	}
-
-	//for (byte i = 0; i < MAX_DCC_MESSAGE_LEN; i++) {
-	//	lastmsg[i] = data[i];//opslaan huidig msg in lastmsg
-	//}
 }
 //functions
 void checkBuffer() {
@@ -737,11 +671,6 @@ void checkBuffer() {
 	if (GPIOR0 & (1 << 1))PIND |= (1 << 4);
 }
 void Loc(bool t) {
-	//000, 001, 110 not on this project V1.01 sept 2021 
-	//instr = data[2] >> 5; //010=reversed 011=forward 100=F1 101=F2 111=CV 
-
-	//if (~preset[Prst].filter & (1 << 0))return; //Filter voor Loc msg
-
 	if (t) { //7 bits adres
 		T_adres = data[0];
 		T_instructie = data[1];
@@ -783,7 +712,6 @@ void Loc(bool t) {
 	}
 }
 void LocDec() {
-	//Serial.println(T_instructie); 
 	//locStatus[4] 0=byte 1 1=byte 2 2=oude status 1 3=oude status 2
 	switch (T_instructie >> 5) {
 	case B010: //reverse
@@ -833,11 +761,8 @@ void LocDec() {
 	locStatus[2] = locStatus[0]; locStatus[3] = locStatus[1]; SpeedStatus[1] = SpeedStatus[0];
 }
 void LocMsgCV() {
-
 	if (~preset[Prst].filter & (1 << 0))return; //Filter voor Loc msg
-
 	//Maak nieuw message Loc CV 
-	Serial.print("cv");
 	byte buffer = FreeBfr();
 	bfr[buffer].adres = T_adres;
 	bfr[buffer].reg = 0;
@@ -849,12 +774,7 @@ void LocMsgCV() {
 	//Debug_bfr(true, buffer);
 }
 void LocMsg(byte tiep) { //called from loc() 1=drive 2=function 1 3 = function2
-	//000, 001, 110 not on this project V1.01 sept 2021  (misschien wel een melding tonen op display bij zo een msg?)
-	//bepaal soort msg 010=reversed 011=forward 100=F1 101=F2 111=CV en filter of getoond moet worden
-	//gebruik GPIOR2 as temp byte
-
 	if (~preset[Prst].filter & (1 << 0))return; //Filter voor Loc msg
-
 	for (byte i = 0; i < Bsize; i++) {
 		if ((~bfr[i].reg & (1 << 6)) && (bfr[i].adres == T_adres) && (bfr[i].reg & (1 << 2))) { //drive msg/functions
 			//check type ontvangen instructie (RegI)
@@ -863,8 +783,7 @@ void LocMsg(byte tiep) { //called from loc() 1=drive 2=function 1 3 = function2
 				if ((bfr[i].instructie ^ T_instructie) == 0) {
 					return;  //herhaalde drive msg
 				}
-				else {
-					//Serial.print(tiep);
+				else {	
 					bfr[i].instructie = T_instructie;
 					changed(i);
 					return; //verlaat function
@@ -874,7 +793,6 @@ void LocMsg(byte tiep) { //called from loc() 1=drive 2=function 1 3 = function2
 			case 2: //Function group 1	
 				//db[0] bepaal functies 1 en vergelijk met db[0]
 				//5 functies FL (headlights) F1~F4 
-				//Serial.println(T_instructie);				
 				GPIOR2 = T_instructie << 3;
 				GPIOR2 = GPIOR2 >> 3; //isoleer bit 0~bit4 
 				//Serial.print(GPIOR2, BIN);
@@ -913,11 +831,7 @@ void LocMsg(byte tiep) { //called from loc() 1=drive 2=function 1 3 = function2
 			}
 		}
 	}
-	//niet uit de functie gesprongen door 'return' dus geen msg gevonden
-	//Serial.println("geen msg");
-
-	//if (tiep == 1)
-	Write_Loc(); //1=drive 2=functions 1 3=functions 2  (alleen nieuwe buffer maken bij drive msg.
+	Write_Loc(); 
 }
 void changed(byte b) {
 	bfr[b].tijd = millis();
@@ -925,7 +839,6 @@ void changed(byte b) {
 	//Debug_bfr(false, b); //print buffer inhoud
 }
 byte FreeBfr() {
-
 	for (byte b = 0; b < Bsize; b++) {
 		if (~bfr[b].reg & (1 << 7)) {
 			if (bfr[b].reg == 0x00) return b;
@@ -939,17 +852,12 @@ byte FreeBfr() {
 			if (millis() - bfr[i].tijd > autoDelete)return i;
 		}
 	}
-
-	//hier kan nog zoeken naar een hele oude buffer die is blijven hangen
-
 	return Bsize;
 }
 void Write_Loc() { //adres en instructiebyte
 	byte free = FreeBfr();
-	//Serial.println(free);
 	if (free == Bsize) return;  //Hier misschien nog een foutafhandeling?
 	clearBuffer(free);
-
 	bfr[free].adres = T_adres;
 	bfr[free].instructie = T_instructie; //= eerste byte na adres.
 	bfr[free].adresbyte = data[0];
@@ -986,24 +894,18 @@ void Debug_bfr(bool n, byte buffer) {
 	Serial.print("  Tijd:"); Serial.println(bfr[buffer].tijd);
 }
 void Write_AccCV(int adr) {
-	Serial.println("cv");
-	//schrijft een Accesoire CV in een buffer, deze msg wordt niet herhaald dus geen routine nodig
-	//voor uitvangen dubbele
-	//databytes en reg is voldoende 
 	byte buffer = FreeBfr();
 	if (buffer == Bsize)return;
 	clearBuffer(buffer);
-
 	bfr[buffer].adres = adr;
 	bfr[buffer].reg = B11001000, //bit7 active bit6 accessoire bit 3 CV msg
-		bfr[buffer].instructie = data[1];
+	bfr[buffer].instructie = data[1];
 	bfr[buffer].adresbyte = data[0];
 	bfr[buffer].db[0] = data[2];
 	bfr[buffer].db[1] = data[3];
 	bfr[buffer].db[2] = data[4];
 	bfr[buffer].tijd = millis();
 	//Debug_bfr(true, buffer);
-	//Serial.println("accCV");
 }
 void Write_Acc(int adr, byte reg) { //called from 'notifyDccMsg()'
 
@@ -1033,7 +935,6 @@ void Write_Acc(int adr, byte reg) { //called from 'notifyDccMsg()'
 //IO alles met de uitvoer van de ontvangen msg. periodiek of manual
 void IO_exe() { //toont een buffer, called manual, time, or direct from loop.
 	bool read = true; byte count = 0;
-
 	if (preset[Prst].outputType == 3) {
 		//clear outs
 		//outputClear();
@@ -1340,13 +1241,11 @@ void scrolldown() {
 	//blok van 50 bovenste lijnen 10 (regelhoogte nog uitzoeken) naar beneden plaatsen
 	//regel voor regel onderste regel y=40~y=49 zwart maken
 	//blijft dus 15pixels over nu aan onderkant
-
 	for (byte y = 40; y < 55; y++) { //45 kleiner om onderbalk te verhogen (10 hoog)
 		for (byte x = 0; x < 129; x++) {
 			dp.drawPixel(x, y, BLACK);
 		}
 	}
-
 	for (byte y = 40; y < 255; y--) { //hier weer de 45
 		for (byte x = 0; x < 128; x++) {
 			if (dp.getPixel(x, y)) {
@@ -1358,7 +1257,7 @@ void scrolldown() {
 			}
 		}
 	}
-	dp.display();
+	//dp.display();
 }
 void drawLoc(byte x, byte y, byte s) {
 	//tekend loc icon
@@ -1409,6 +1308,15 @@ void TXT(byte n) {
 	switch (n) {
 	case 0: //niets
 		dp.print(F(""));
+		break;
+	case 5:
+		dp.print(F("Preset:"));
+		break;
+	case 6:
+		dp.print(F("Lijst"));
+		break;
+	case 7:
+		dp.print(F("Apart"));
 		break;
 	case 10:
 		dp.print(F("aut"));
