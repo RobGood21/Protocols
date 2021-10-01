@@ -185,7 +185,7 @@ void setup() {
 	TCCR1B = 0x00;
 	//TCCR1B |= (1 << 2);
 	TCCR1B |= (1 << 1);
-	//TCCR1B |= (1 << 0);
+	TCCR1B |= (1 << 0);
 
 	if (~PINC & (1 << 0) && ~PINC & (1 << 3))factory();
 
