@@ -103,7 +103,7 @@ unsigned long slowtimer;
 //variabelen schakelaars
 byte SW_status = 15; //holds the last switch status, start as B00001111;
 byte SW_holdcounter; //for scroll functie op buttons
-byte slowcount;
+byte speedCount;
 
 void MEM_read() {
 	int t;
@@ -122,7 +122,32 @@ void MEM_read() {
 		EEPROM.get(t + 6, preset[i].adres);
 		if (preset[i].adres == 0xFFFF)preset[i].adres = 1;
 	}
+	//instellen interupt tbv. PWM
+	if (preset[Prst].outputType == 2) StartISR(true);
 }
+
+void StartISR(bool onoff) {
+	//Serial.print("ISR");
+	if (onoff) {
+		TIMSK1 |= (1 << 0);
+	}
+	else {
+		TIMSK1 &= ~(1 << 0);
+		PORTD &= ~(1 << 5); //set output low
+	}
+}
+
+ISR(TIMER1_OVF_vect) {
+	//Serial.print("*");
+	if (speedCount == 29) {
+		speedCount = 0xFF;
+		//if(SpeedStatus[0] > 0) 
+		PORTD |= (1 << 5);
+	}
+	speedCount++;
+	if (SpeedStatus[0] == speedCount)PORTD &= ~(1 << 5);
+}
+
 void MEM_write() {
 	EEPROM.update(110, Prst);
 	EEPROM.update(200 + (Prst * 20) + 0, preset[Prst].filter);
@@ -132,12 +157,12 @@ void MEM_write() {
 	EEPROM.put(200 + (Prst * 20) + 6, preset[Prst].adres);
 }
 void setup() {
-	
-
-
 	//start processen
 	Serial.begin(9600);
 	dp.begin(SSD1306_SWITCHCAPVCC, 0x3C);
+	//delay(5000);
+	DP_welcome(); //toon opening text
+	delay(1000);
 	Dcc.pin(0, 2, 1); //interupt number 0; pin 2; pullup to pin2
 	Dcc.init(MAN_ID_DIY, 10, 0b10000000, 0); //bit6 false, decoder adres callback 'notifyDccAccTurnoutBoard'
 	//bit 7 maakt er een loc decoder van
@@ -149,8 +174,6 @@ void setup() {
 	DDRD |= (1 << 4); //groene en rode  leds
 	DDRD |= (1 << 5); //blauwe led command op output
 
-
-
 	DDRB |= (1 << 0); //PIN8 serial out
 	DDRB |= (1 << 1); //PIN9 Shift clock
 	DDRB |= (1 << 2); //PIN10 Shift latch
@@ -158,9 +181,14 @@ void setup() {
 	//delay(10);
 	out[0] = 0; out[1] = 0; output();
 
+	//timer 1 interrupt  max prescaler
+	TCCR1B = 0x00;
+	//TCCR1B |= (1 << 2);
+	TCCR1B |= (1 << 1);
+	//TCCR1B |= (1 << 0);
+
 	if (~PINC & (1 << 0) && ~PINC & (1 << 3))factory();
-	DP_welcome(); //toon opening text
-	delay(1000);
+
 	MEM_read();
 	GPIOR0 |= (1 << 5);
 	DDRD |= (1 << 6); //OE output enabled van de shifts, zorgen dat er geen spookpulsen op de outputs komen
@@ -234,16 +262,25 @@ void loop() {
 	//processen
 	Dcc.process();
 	//slow events
-	if (millis() - slowtimer > 30) {
-		slowtimer = millis();
 
+	//timer voor PWM output locdecoder
+	//if (preset[Prst].outputType == 2) {		
+	//	if (millis() - speedTime > SpeedStatus[0]) PORTD &= ~(1 << 5); //clear output
+	//}
+
+
+	if (millis() - slowtimer > 30) {
+		//PWM maken in output, hiervoor ook output gebruiken
+
+		//if (preset[Prst].outputType == 2) { //
+		//	if (SpeedStatus[0] > 0) PORTD |= (1 << 5); //zet output hoog
+		//	speedTime = millis(); //reset timer
+		//}
+
+		slowtimer = millis();
 		checkBuffer(); //check status buffer
-		slowcount++;
-		if (slowcount > 100) {
-			slowcount = 0;
-			//PORTD &= ~(3 << 3); //set leds off
-		}
 		SW_exe();
+
 	}
 
 	//timer voor next msg
@@ -261,7 +298,7 @@ void loop() {
 void SW_exe() {
 	byte changed = 0; byte read = 0;
 	read = PINC;
-	read = read << 4;read = read >> 4; //isoleer bit0~bit3	
+	read = read << 4; read = read >> 4; //isoleer bit0~bit3	
 	//pressed or released
 	changed = read ^ SW_status;
 	if (changed > 0) {
@@ -290,6 +327,7 @@ void SW_on(byte sw) {
 		GPIOR0 ^= (1 << 2);
 		if (program) { //programeer tonen
 			DP_prg();
+			SpeedStatus[0] = 0;
 		}
 		else { //monitor tonen
 			MEM_write();
@@ -336,7 +374,7 @@ void SW_on(byte sw) {
 		break;
 
 	case 3: //knop 3 NIET gebruiken voor program????
-		if (~program) if (~preset[Prst].reg & (1 << 2))IO_exe();		
+		if (~program) if (~preset[Prst].reg & (1 << 2))IO_exe();
 		break;
 
 	}
@@ -523,10 +561,23 @@ void ParaDown() {
 		preset[Prst].outputType++;
 		if (preset[Prst].outputType > 3)preset[Prst].outputType = 0;
 		preset[Prst].adres = 1; //veranderen output types geeft reset adres
-		if (preset[Prst].outputType == 3)preset[Prst].adres = 512;
-		//clear outputs
+
+		switch (preset[Prst].outputType) {
+		case 2:
+			StartISR(true);
+			break;
+		case 3:
+			preset[Prst].adres = 512;
+			break;
+		default:
+			StartISR(false);
+			break;
+		}
+
 		out[0] = 0; out[1] = 0; shift(); outputClear();
-		PORTD &= ~(1 << 5); 
+		PORTD &= ~(1 << 5);
+		SpeedStatus[0] = 0;
+
 		break;
 	case 13: //adres
 		int t = 512;
@@ -783,7 +834,7 @@ void LocMsg(byte tiep) { //called from loc() 1=drive 2=function 1 3 = function2
 				if ((bfr[i].instructie ^ T_instructie) == 0) {
 					return;  //herhaalde drive msg
 				}
-				else {	
+				else {
 					bfr[i].instructie = T_instructie;
 					changed(i);
 					return; //verlaat function
@@ -831,7 +882,7 @@ void LocMsg(byte tiep) { //called from loc() 1=drive 2=function 1 3 = function2
 			}
 		}
 	}
-	Write_Loc(); 
+	Write_Loc();
 }
 void changed(byte b) {
 	bfr[b].tijd = millis();
@@ -899,7 +950,7 @@ void Write_AccCV(int adr) {
 	clearBuffer(buffer);
 	bfr[buffer].adres = adr;
 	bfr[buffer].reg = B11001000, //bit7 active bit6 accessoire bit 3 CV msg
-	bfr[buffer].instructie = data[1];
+		bfr[buffer].instructie = data[1];
 	bfr[buffer].adresbyte = data[0];
 	bfr[buffer].db[0] = data[2];
 	bfr[buffer].db[1] = data[3];
@@ -1138,7 +1189,8 @@ byte spd(byte data) {
 	if (GPIOR2 > 1) {
 		speed = (GPIOR2 - 1) * 2;
 	}
-	if (~data & (1 << 4)) speed--;
+	if (~data & (1 << 4) && speed>0) speed --;
+
 	return speed;
 }
 void functions(byte x, byte y) {
