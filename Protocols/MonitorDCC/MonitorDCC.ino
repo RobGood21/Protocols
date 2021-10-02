@@ -553,7 +553,7 @@ void ParaDown() {
 		preset[Prst].outputType++;
 		if (preset[Prst].outputType > 3)preset[Prst].outputType = 0;
 		preset[Prst].adres = 1; //veranderen output types geeft reset adres
-
+		StartISR(false);
 		switch (preset[Prst].outputType) {
 		case 2:
 			StartISR(true);
@@ -562,7 +562,7 @@ void ParaDown() {
 			preset[Prst].adres = 512;
 			break;
 		default:
-			StartISR(false);
+
 			break;
 		}
 
@@ -1178,7 +1178,7 @@ byte spd(byte data) {
 	if (GPIOR2 > 1) {
 		speed = (GPIOR2 - 1) * 2;
 	}
-	if (~data & (1 << 4) && speed>0) speed --;
+	if (~data & (1 << 4) && speed > 0) speed--;
 
 	return speed;
 }
