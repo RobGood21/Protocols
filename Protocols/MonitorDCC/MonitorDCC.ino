@@ -27,7 +27,7 @@ char version[] = "V 1.01"; //Openingstekst versie aanduiding
 #include <NmraDcc.h>
 
 //constanten
-#define Bsize 8 //aantal buffers
+#define Bsize 12 //aantal buffers
 #define Psize 4 //aantal presets
 #define autoDelete 10000 //tijd voor autodelete buffer inhoud 10sec
 #define Maxtime 50 //max tijd in 100ms voor wachten tussen tonen msg's
@@ -93,9 +93,7 @@ byte out[2]; //
 byte locStatus[4]; byte SpeedStatus[2];
 unsigned long AutTime;
 byte countautodelete; //gebruik in checkBuffer
-
 byte prgfase;
-//byte lastmsg[MAX_DCC_MESSAGE_LEN]; //length 6
 byte data[MAX_DCC_MESSAGE_LEN]; //bevat laatste ontvangen data uit de decoder
 byte Bcount; //pointer naar laast verwerkte artikel buffer
 
@@ -116,7 +114,7 @@ void MEM_read() {
 		preset[i].filter = EEPROM.read(t);
 		preset[i].reg = EEPROM.read(t + 1);
 		preset[i].time = EEPROM.read(t + 2);
-		if (preset[i].time == 0xFF)preset[i].time = 5; //default 0,5 seconde
+		if (preset[i].time == 0xFF)preset[i].time = 10; //default 1 seconde
 		preset[i].outputType = EEPROM.read(t + 3);
 		if (preset[i].outputType > 3)preset[i].outputType = 0;
 		EEPROM.get(t + 6, preset[i].adres);
@@ -125,7 +123,6 @@ void MEM_read() {
 	//instellen interupt tbv. PWM
 	if (preset[Prst].outputType == 2) StartISR(true);
 }
-
 void StartISR(bool onoff) {
 	//Serial.print("ISR");
 	if (onoff) {
@@ -136,18 +133,14 @@ void StartISR(bool onoff) {
 		PORTD &= ~(1 << 5); //set output low
 	}
 }
-
 ISR(TIMER1_OVF_vect) {
-	//Serial.print("*");
 	if (speedCount == 29) {
 		speedCount = 0xFF;
-		//if(SpeedStatus[0] > 0) 
 		PORTD |= (1 << 5);
 	}
 	speedCount++;
 	if (SpeedStatus[0] == speedCount)PORTD &= ~(1 << 5);
 }
-
 void MEM_write() {
 	EEPROM.update(110, Prst);
 	EEPROM.update(200 + (Prst * 20) + 0, preset[Prst].filter);
@@ -294,7 +287,6 @@ void loop() {
 	}
 
 }
-//schakelaars
 void SW_exe() {
 	byte changed = 0; byte read = 0;
 	read = PINC;
@@ -595,7 +587,6 @@ void ParaDown() {
 		break;
 	}
 }
-//terugmeldingen (callback) uit libraries (NmraDCC)
 void notifyDccMsg(DCC_MSG * Msg) {
 	//uitschakelen in program mode
 	if (GPIOR0 & (1 << 2))return;
@@ -690,7 +681,6 @@ void notifyDccMsg(DCC_MSG * Msg) {
 		//adress=255 idle packett
 	}
 }
-//functions
 void checkBuffer() {
 	//hangende buffers wissen
 	countautodelete++;
@@ -842,8 +832,7 @@ void LocMsg(byte tiep) { //called from loc() 1=drive 2=function 1 3 = function2
 				break;
 
 			case 2: //Function group 1	
-				//db[0] bepaal functies 1 en vergelijk met db[0]
-				//5 functies FL (headlights) F1~F4 
+				//db[0] bepaal functies 1 en vergelijk met db[0], 5 functies FL (headlights) F1~F4 
 				GPIOR2 = T_instructie << 3;
 				GPIOR2 = GPIOR2 >> 3; //isoleer bit 0~bit4 
 				//Serial.print(GPIOR2, BIN);
