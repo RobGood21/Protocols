@@ -184,6 +184,7 @@ void setup() {
 
 	MEM_read();
 	GPIOR0 |= (1 << 5);
+	GPIOR0 |= (1 << 6); //flag om eerste msg direct te tonen
 	DDRD |= (1 << 6); //OE output enabled van de shifts, zorgen dat er geen spookpulsen op de outputs komen
 	//DP_monitor();
 }
@@ -254,26 +255,10 @@ void outputClear() {
 void loop() {
 	//processen
 	Dcc.process();
-	//slow events
-
-	//timer voor PWM output locdecoder
-	//if (preset[Prst].outputType == 2) {		
-	//	if (millis() - speedTime > SpeedStatus[0]) PORTD &= ~(1 << 5); //clear output
-	//}
-
-
 	if (millis() - slowtimer > 30) {
-		//PWM maken in output, hiervoor ook output gebruiken
-
-		//if (preset[Prst].outputType == 2) { //
-		//	if (SpeedStatus[0] > 0) PORTD |= (1 << 5); //zet output hoog
-		//	speedTime = millis(); //reset timer
-		//}
-
 		slowtimer = millis();
 		checkBuffer(); //check status buffer
 		SW_exe();
-
 	}
 
 	//timer voor next msg
@@ -701,10 +686,16 @@ void checkBuffer() {
 			GPIOR0 &= ~(1 << 1);
 		}
 	}
-
 	PORTD &= ~(3 << 3);
 	if (GPIOR0 & (1 << 0)) {
 		PIND |= (1 << 3);
+		
+		if (~preset[Prst].reg & (1 << 2)) { //in manual mode
+			if (GPIOR0 & (1 << 6))IO_exe();
+			GPIOR0 &= ~(1 << 6); //reset flag
+		}
+
+
 	}
 	else {
 		Bcount = 0;
@@ -982,13 +973,16 @@ void IO_exe() { //toont een buffer, called manual, time, or direct from loop.
 		PORTD &= ~(1 << 5);
 		output();
 	}
-
 	while (read) {
 		if (bfr[Bcount].reg & (1 << 7)) read = IO_dp(); //Alleen als bfr[].reg bit7=true
 		Bcount++;
 		if (Bcount == Bsize)Bcount = 0;
 		count++;
-		if (count > Bsize)read = false; //exit als er geen te tonen buffer is gevonden
+		if (count > Bsize) {
+			read = false; //exit als er geen te tonen buffer is gevonden
+			GPIOR0 |= (1 << 6); //flag show message direct
+		}
+			
 	}
 	dp.display();
 }

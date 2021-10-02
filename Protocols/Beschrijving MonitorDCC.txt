@@ -28,7 +28,7 @@ bit2 false monitor, true programmeer scherm
 bit3 flag gebruikt in Loc()
 bit4 true:Scroll van knop2 false:geen scrol van knop2
 bit5 True: monitor instellen eenmalig na powerup
-bit6
+bit6 True: nieuw msg direct doorzetten in converter mode. 
 bit7
 
 GPIOR2 gpio flags lokaal, dus binnen 1 functie alleen gebruiken
