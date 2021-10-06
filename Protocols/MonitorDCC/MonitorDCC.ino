@@ -95,6 +95,7 @@ unsigned long AutTime;
 byte countautodelete; //gebruik in checkBuffer
 byte prgfase;
 byte data[MAX_DCC_MESSAGE_LEN]; //bevat laatste ontvangen data uit de decoder
+byte lastmsg[MAX_DCC_MESSAGE_LEN];
 byte Bcount; //pointer naar laast verwerkte artikel buffer
 
 unsigned long slowtimer;
@@ -219,7 +220,7 @@ void DP_welcome() {
 	dp.println(F("www.wisselmotor.nl"));
 	setText(6, 25, 2);
 	dp.println(F("MonitorDCC"));
-	setText(85, 55, 1);
+	setText(85, 45, 1);
 	dp.print(version);
 	dp.display();
 }
@@ -576,15 +577,16 @@ void notifyDccMsg(DCC_MSG * Msg) {
 	//uitschakelen in program mode
 	if (GPIOR0 & (1 << 2))return;
 	//direct achter elkaar ontvangen gelijke msg's uitfilteren	
-	//bool nieuw = true;
-	//for (byte i = 0; i < MAX_DCC_MESSAGE_LEN; i++) {
-	//	if (lastmsg[i] != Msg->Data[i]) nieuw = false;
-	//}
-	//if (nieuw)return;	
+	bool nieuw = true;
+	for (byte i = 0; i < MAX_DCC_MESSAGE_LEN; i++) {
+		if (lastmsg[i] != Msg->Data[i]) nieuw = false;
+	}
+	if (nieuw)return;	
 
 	//databytes uit de library opslaan in tijdelijk geheugen
 	for (byte i; i < MAX_DCC_MESSAGE_LEN; i++) {
 		data[i] = Msg->Data[i];
+		lastmsg[i] = data[i];
 	}
 
 	//byte db;  
@@ -794,7 +796,8 @@ void LocDec() {
 }
 void LocMsgCV() {
 	if (~preset[Prst].filter & (1 << 0))return; //Filter voor Loc msg
-	//Maak nieuw message Loc CV 
+													
+//Maak nieuw message Loc CV 
 	byte buffer = FreeBfr();
 	bfr[buffer].adres = T_adres;
 	bfr[buffer].reg = 0;
