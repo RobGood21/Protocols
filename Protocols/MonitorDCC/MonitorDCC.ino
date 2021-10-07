@@ -27,7 +27,7 @@ char version[] = "V 1.01"; //Openingstekst versie aanduiding
 #include <NmraDcc.h>
 
 //constanten
-#define Bsize 12 //aantal buffers
+#define Bsize 10 //aantal buffers
 #define Psize 4 //aantal presets
 #define autoDelete 10000 //tijd voor autodelete buffer inhoud 10sec
 #define Maxtime 50 //max tijd in 100ms voor wachten tussen tonen msg's
@@ -913,11 +913,13 @@ void clearBuffer(byte buffer) {
 	bfr[buffer].db[1] = 0;
 	bfr[buffer].db[2] = 0;
 }
+
+/*
 void Debug_bfr(bool n, byte buffer) {
-	/*
-	Bij een drive msg wordt nu de checksum in de CV geschreven, maakt denk ik niet uit omdat deze CV
-	niet wordt getoond bij deze type msg. uit filteren kan maar geeft extra instructies
-	*/
+	
+	//Bij een drive msg wordt nu de checksum in de CV geschreven, maakt denk ik niet uit omdat deze CV
+	//niet wordt getoond bij deze type msg. uit filteren kan maar geeft extra instructies
+	
 	if (n) Serial.print("New ");
 	Serial.print(buffer); Serial.print("  Adres:"); Serial.print(bfr[buffer].adres);
 	Serial.print(" Reg:"); Serial.print(bfr[buffer].reg, BIN);
@@ -927,6 +929,7 @@ void Debug_bfr(bool n, byte buffer) {
 	Serial.print(" db2:"); Serial.print(bfr[buffer].db[2], BIN);
 	Serial.print("  Tijd:"); Serial.println(bfr[buffer].tijd);
 }
+*/
 void Write_AccCV(int adr) {
 	byte buffer = FreeBfr();
 	if (buffer == Bsize)return;
