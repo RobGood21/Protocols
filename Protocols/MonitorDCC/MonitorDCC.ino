@@ -27,7 +27,7 @@ char version[] = "V 1.01"; //Openingstekst versie aanduiding
 #include <NmraDcc.h>
 
 //constanten
-#define Bsize 10 //aantal buffers
+#define Bsize 10 //aantal buffers, 10 is max ivm geheugen 
 #define Psize 4 //aantal presets
 #define autoDelete 10000 //tijd voor autodelete buffer inhoud 10sec
 #define Maxtime 50 //max tijd in 100ms voor wachten tussen tonen msg's
@@ -190,7 +190,7 @@ void setup() {
 	//DP_monitor();
 }
 void shift() {
-	for (byte b = 0; b < 2; b++) {
+	for (byte b = 1; b < 255 ; b--) {
 		for (byte i = 0; i < 8; i++) {
 			PORTB &= ~(1 << 0); //reset pin 8
 			if (out[b] & (1 << i))PINB |= (1 << 0); //toggle. set pin 8
