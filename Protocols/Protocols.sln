@@ -1,7 +1,7 @@
 ﻿
 Microsoft Visual Studio Solution File, Format Version 12.00
-# Visual Studio 15
-VisualStudioVersion = 15.0.28307.1433
+# Visual Studio Version 17
+VisualStudioVersion = 17.3.32825.248
 MinimumVisualStudioVersion = 10.0.40219.1
 Project("{8BC9CEB8-8B4A-11D0-8D11-00A0C91BC942}") = "DCC_NMRA", "DCC_NMRA\DCC_NMRA.vcxproj", "{C5F80730-F44F-4478-BDAE-6634EFC2CA88}"
 EndProject
@@ -22,19 +22,9 @@ Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "Solution Items", "Solution 
 EndProject
 Project("{8BC9CEB8-8B4A-11D0-8D11-00A0C91BC942}") = "EEPROM-2.0", "Libraries\EEPROM\2.0\EEPROM\EEPROM-2.0.vcxitems", "{ADFB7D5F-1706-43DA-B8F2-AAA2C79C3EED}"
 EndProject
+Project("{8BC9CEB8-8B4A-11D0-8D11-00A0C91BC942}") = "Knoppen", "Knoppen\Knoppen.vcxproj", "{8A544934-7A47-40B9-8E1C-FD044321CCEF}"
+EndProject
 Global
-	GlobalSection(SharedMSBuildProjectFiles) = preSolution
-		Libraries\Adafruit_GFX_Library\1.7.5\Adafruit_GFX_Library\Adafruit_GFX_Library-1.7.5.vcxitems*{4639cce9-58f7-431c-b868-622ec40c20f8}*SharedItemsImports = 9
-		Libraries\NmraDcc-master\2.0.8\NmraDcc-master\NmraDcc-master-2.0.8.vcxitems*{9023d1c1-a79b-4309-b2c3-9fa80d33346b}*SharedItemsImports = 9
-		Libraries\Wire\1.0\Wire\Wire-1.0.vcxitems*{9a9eb41d-b12c-4edf-9198-018c7c5b7e9d}*SharedItemsImports = 9
-		Libraries\EEPROM\2.0\EEPROM\EEPROM-2.0.vcxitems*{adfb7d5f-1706-43da-b8f2-aaa2c79c3eed}*SharedItemsImports = 9
-		Libraries\Adafruit_SSD1306\2.1.0\Adafruit_SSD1306\Adafruit_SSD1306-2.1.0.vcxitems*{c105e849-e47a-4841-94bf-fa3d06787843}*SharedItemsImports = 9
-		Libraries\Adafruit_GFX_Library\1.7.5\Adafruit_GFX_Library\Adafruit_GFX_Library-1.7.5.vcxitems*{d0ca0460-1af7-4ed8-988f-454489331e48}*SharedItemsImports = 4
-		Libraries\Adafruit_SSD1306\2.1.0\Adafruit_SSD1306\Adafruit_SSD1306-2.1.0.vcxitems*{d0ca0460-1af7-4ed8-988f-454489331e48}*SharedItemsImports = 4
-		Libraries\EEPROM\2.0\EEPROM\EEPROM-2.0.vcxitems*{d0ca0460-1af7-4ed8-988f-454489331e48}*SharedItemsImports = 4
-		Libraries\NmraDcc-master\2.0.8\NmraDcc-master\NmraDcc-master-2.0.8.vcxitems*{d0ca0460-1af7-4ed8-988f-454489331e48}*SharedItemsImports = 4
-		Libraries\Wire\1.0\Wire\Wire-1.0.vcxitems*{d0ca0460-1af7-4ed8-988f-454489331e48}*SharedItemsImports = 4
-	EndGlobalSection
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
 		Debug|x86 = Debug|x86
 		Release|x86 = Release|x86
@@ -48,11 +38,27 @@ Global
 		{D0CA0460-1AF7-4ED8-988F-454489331E48}.Debug|x86.Build.0 = Debug|Win32
 		{D0CA0460-1AF7-4ED8-988F-454489331E48}.Release|x86.ActiveCfg = Release|Win32
 		{D0CA0460-1AF7-4ED8-988F-454489331E48}.Release|x86.Build.0 = Release|Win32
+		{8A544934-7A47-40B9-8E1C-FD044321CCEF}.Debug|x86.ActiveCfg = Debug|Win32
+		{8A544934-7A47-40B9-8E1C-FD044321CCEF}.Debug|x86.Build.0 = Debug|Win32
+		{8A544934-7A47-40B9-8E1C-FD044321CCEF}.Release|x86.ActiveCfg = Release|Win32
+		{8A544934-7A47-40B9-8E1C-FD044321CCEF}.Release|x86.Build.0 = Release|Win32
 	EndGlobalSection
 	GlobalSection(SolutionProperties) = preSolution
 		HideSolutionNode = FALSE
 	EndGlobalSection
 	GlobalSection(ExtensibilityGlobals) = postSolution
 		SolutionGuid = {9B690695-D3BD-474D-AA84-7BB7D8C0CD6E}
+	EndGlobalSection
+	GlobalSection(SharedMSBuildProjectFiles) = preSolution
+		Libraries\Adafruit_GFX_Library\1.7.5\Adafruit_GFX_Library\Adafruit_GFX_Library-1.7.5.vcxitems*{4639cce9-58f7-431c-b868-622ec40c20f8}*SharedItemsImports = 9
+		Libraries\NmraDcc-master\2.0.8\NmraDcc-master\NmraDcc-master-2.0.8.vcxitems*{9023d1c1-a79b-4309-b2c3-9fa80d33346b}*SharedItemsImports = 9
+		Libraries\Wire\1.0\Wire\Wire-1.0.vcxitems*{9a9eb41d-b12c-4edf-9198-018c7c5b7e9d}*SharedItemsImports = 9
+		Libraries\EEPROM\2.0\EEPROM\EEPROM-2.0.vcxitems*{adfb7d5f-1706-43da-b8f2-aaa2c79c3eed}*SharedItemsImports = 9
+		Libraries\Adafruit_SSD1306\2.1.0\Adafruit_SSD1306\Adafruit_SSD1306-2.1.0.vcxitems*{c105e849-e47a-4841-94bf-fa3d06787843}*SharedItemsImports = 9
+		Libraries\Adafruit_GFX_Library\1.7.5\Adafruit_GFX_Library\Adafruit_GFX_Library-1.7.5.vcxitems*{d0ca0460-1af7-4ed8-988f-454489331e48}*SharedItemsImports = 4
+		Libraries\Adafruit_SSD1306\2.1.0\Adafruit_SSD1306\Adafruit_SSD1306-2.1.0.vcxitems*{d0ca0460-1af7-4ed8-988f-454489331e48}*SharedItemsImports = 4
+		Libraries\EEPROM\2.0\EEPROM\EEPROM-2.0.vcxitems*{d0ca0460-1af7-4ed8-988f-454489331e48}*SharedItemsImports = 4
+		Libraries\NmraDcc-master\2.0.8\NmraDcc-master\NmraDcc-master-2.0.8.vcxitems*{d0ca0460-1af7-4ed8-988f-454489331e48}*SharedItemsImports = 4
+		Libraries\Wire\1.0\Wire\Wire-1.0.vcxitems*{d0ca0460-1af7-4ed8-988f-454489331e48}*SharedItemsImports = 4
 	EndGlobalSection
 EndGlobal
