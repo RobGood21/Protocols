@@ -18,7 +18,7 @@ Converter toont uitkomst van het filter voor de monitor. met extra hoogaf filter
 */
 
 
-char version[] = "V 2.01"; //Openingstekst versie aanduiding
+char version[] = "V 1.01"; //Openingstekst versie aanduiding
 //libraries
 //#include <Adafruit_GFX.h>
 #include <EEPROM.h>
@@ -39,15 +39,6 @@ char version[] = "V 2.01"; //Openingstekst versie aanduiding
 //constructers
 Adafruit_SSD1306 dp(128, 64, &Wire); // , -1);
 NmraDcc  Dcc;
-
-byte Ser_reg; //diverse booleans voor in runtime
-//bit0 true: Port open false port niet open..
-
-
-char Scmd_char[2];
-int Scmd_value[2];
-byte Ser_count;
-
 struct presets {
 	byte reg;
 	//bit0 True: Toon aan en uit msg, false: toon alleen uit met pulsduur
@@ -98,7 +89,7 @@ struct buffers {
 int T_adres = 0; //tijdelijk adres
 byte T_instructie = 0; //Tijdelijk opslag instructie byte
 byte T_db[2]; //Tijdelijke opslag
-byte out[2]; // shifts bytes
+byte out[2]; //
 byte locStatus[4]; byte SpeedStatus[2];
 unsigned long AutTime;
 byte countautodelete; //gebruik in checkBuffer
@@ -159,96 +150,9 @@ void MEM_write() {
 	EEPROM.update(200 + (Prst * 20) + 3, preset[Prst].outputType);
 	EEPROM.put(200 + (Prst * 20) + 6, preset[Prst].adres);
 }
-
-void Serial_exe() { //ontvangen, zenden en uitvoeren van WPapp 
-	//GPIOR1 gebruiken bit0 false=teken true=cyfer
-	int getal = 0;
-
-	while (Serial.available() > 0) {
-		int teken = Serial.read(); //lees teken uit de serial buffer
-
-		if (Ser_count > 2 && Ser_count < 11) { //dit moeten altijd getallen zijn...
-			if (teken >= '0' && teken <= '9')getal = teken - '0';
-		}
-
-		switch (teken) {
-		case '<': //start
-			Ser_count = 1; //Set command teller 2xCHAR 4xcyfer>int 4xcyfer>int
-			Scmd_char[0] = '-'; Scmd_char[1] = '-'; Scmd_value[0] = 0; Scmd_value[1] = 0;
-			//Serial.print("jopie");
-			break;
-
-		default: //teken
-
-			switch (Ser_count) {
-			case 0: //doe niks nadah
-				break;
-			case 1: //eerste char van commandcode
-				Scmd_char[0] = teken;
-				//Ser_count=2;
-				break;
-			case 2: //tweede char van command code
-				Scmd_char[1] = teken;
-				//Ser_count=3;
-				break;
-			case 3: //hoogste cyfer eerste getal
-				Scmd_value[0] += getal * 1000;
-				//Ser_count=4;
-				break;
-			case 4:
-				Scmd_value[0] += getal * 100;
-				//Ser_count=5;
-				break;
-			case 5:
-				Scmd_value[0] += getal * 10;
-				//Ser_count=6;
-				break;
-			case 6:
-				Scmd_value[0] += getal;
-				//Ser_count=7;
-				break;
-			case 7: //hoogste cyfer in eerste getal
-				Scmd_value[1] += getal * 1000;
-				//Ser_count=8;
-				break;
-			case 8:
-				Scmd_value[1] += getal * 100;
-				//Ser_count=9;
-				break;
-			case 9:
-				Scmd_value[1] += getal * 10;
-				//Ser_count = 10;
-				break;
-			case 10:
-				Scmd_value[0] += getal;
-				Ser_count = 0;
-				//command klaar alleen hieruit verder gaan.
-				Ser_command();
-				break;
-			}
-
-			Ser_count++; //volgende teken
-			break;
-		}
-	}
-}
-void Ser_command() { // Scmd_char Scmd_value bevatten nu het laatste 'command' 
-	//uitvoeren van dit command
-	Serial.print(Scmd_char[0]); Serial.print(Scmd_char[1]);
-}
-
-void Ser_display() {
-	//dp.clearDisplay();
-	//dp.setTextColor(WHITE);
-	//dp.setTextSize(1);
-	//dp.setCursor(5, 5);
-	//dp.println(Ser_txt);
-	//dp.display();
-}
 void setup() {
 	//start processen
 	Serial.begin(9600);
-
 	dp.begin(SSD1306_SWITCHCAPVCC, 0x3C);
 	//delay(5000);
 	DP_welcome(); //toon opening text
@@ -352,9 +256,6 @@ void outputClear() {
 void loop() {
 	//processen
 	Dcc.process();
-	Serial_exe();
-
-
 	if (millis() - slowtimer > 30) {
 		slowtimer = millis();
 		checkBuffer(); //check status buffer

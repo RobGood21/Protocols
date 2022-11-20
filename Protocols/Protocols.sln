@@ -24,6 +24,8 @@ Project("{8BC9CEB8-8B4A-11D0-8D11-00A0C91BC942}") = "EEPROM-2.0", "Libraries\EEP
 EndProject
 Project("{8BC9CEB8-8B4A-11D0-8D11-00A0C91BC942}") = "Knoppen", "Knoppen\Knoppen.vcxproj", "{8A544934-7A47-40B9-8E1C-FD044321CCEF}"
 EndProject
+Project("{8BC9CEB8-8B4A-11D0-8D11-00A0C91BC942}") = "V1.01_DCCmonitor", "V1.01_DCCmonitor\V1.01_DCCmonitor.vcxproj", "{CEBC33FD-108A-43AB-BE70-1A22AFD17652}"
+EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
 		Debug|x86 = Debug|x86
@@ -42,6 +44,10 @@ Global
 		{8A544934-7A47-40B9-8E1C-FD044321CCEF}.Debug|x86.Build.0 = Debug|Win32
 		{8A544934-7A47-40B9-8E1C-FD044321CCEF}.Release|x86.ActiveCfg = Release|Win32
 		{8A544934-7A47-40B9-8E1C-FD044321CCEF}.Release|x86.Build.0 = Release|Win32
+		{CEBC33FD-108A-43AB-BE70-1A22AFD17652}.Debug|x86.ActiveCfg = Debug|Win32
+		{CEBC33FD-108A-43AB-BE70-1A22AFD17652}.Debug|x86.Build.0 = Debug|Win32
+		{CEBC33FD-108A-43AB-BE70-1A22AFD17652}.Release|x86.ActiveCfg = Release|Win32
+		{CEBC33FD-108A-43AB-BE70-1A22AFD17652}.Release|x86.Build.0 = Release|Win32
 	EndGlobalSection
 	GlobalSection(SolutionProperties) = preSolution
 		HideSolutionNode = FALSE
