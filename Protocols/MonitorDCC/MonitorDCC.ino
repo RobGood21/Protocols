@@ -18,7 +18,7 @@ Converter toont uitkomst van het filter voor de monitor. met extra hoogaf filter
 */
 
 
-char version[] = "V 2.01"; //Openingstekst versie aanduiding
+//char version[] = "V 2.01"; //Openingstekst versie aanduiding
 //libraries
 //#include <Adafruit_GFX.h>
 #include <EEPROM.h>
@@ -27,11 +27,17 @@ char version[] = "V 2.01"; //Openingstekst versie aanduiding
 #include <NmraDcc.h>
 
 //constanten
+
+#define version "V2.01"
 #define Bsize 10 //aantal buffers, 10 is max ivm geheugen 
 #define Psize 4 //aantal presets
 #define autoDelete 10000 //tijd voor autodelete buffer inhoud 10sec
 #define Maxtime 50 //max tijd in 100ms voor wachten tussen tonen msg's
 #define PFsize  14 //aantal programfases
+
+#define noTX GPIOR1 &=~(1<<0);  //stuur dit command niet naar WMapp
+#define TX GPIOR1 |=(1<<0); //dit command WEl naar de WMapp versturen
+
 
 //verkortingen 
 #define program GPIOR0 & (1<<2) //programmeer modus aan 
@@ -40,13 +46,8 @@ char version[] = "V 2.01"; //Openingstekst versie aanduiding
 Adafruit_SSD1306 dp(128, 64, &Wire); // , -1);
 NmraDcc  Dcc;
 
-byte Ser_reg; //diverse booleans voor in runtime
+//byte Ser_reg; //diverse booleans voor in runtime
 //bit0 true: Port open false port niet open..
-
-
-char Scmd_char[2];
-int Scmd_value[2];
-byte Ser_count;
 
 struct presets {
 	byte reg;
@@ -113,6 +114,10 @@ byte SW_status = 15; //holds the last switch status, start as B00001111;
 byte SW_holdcounter; //for scroll functie op buttons
 byte speedCount;
 
+//tbv Serial naar WMapp
+byte commandcount = 0;
+byte command[4];
+
 void MEM_read() {
 	int t;
 	//presets laden
@@ -151,6 +156,7 @@ ISR(TIMER1_OVF_vect) {
 	speedCount++;
 	if (SpeedStatus[0] == speedCount)PORTD &= ~(1 << 5);
 }
+
 void MEM_write() {
 	EEPROM.update(110, Prst);
 	EEPROM.update(200 + (Prst * 20) + 0, preset[Prst].filter);
@@ -160,90 +166,118 @@ void MEM_write() {
 	EEPROM.put(200 + (Prst * 20) + 6, preset[Prst].adres);
 }
 
-void Serial_exe() { //ontvangen, zenden en uitvoeren van WPapp 
-	//GPIOR1 gebruiken bit0 false=teken true=cyfer
-	int getal = 0;
-
+void Serial_read() {
+	//een connected boolean is niet nodig omdat alleen bij een connection met een DCCmonitor WMapp verder gaat.
+	int inData;
 	while (Serial.available() > 0) {
-		int teken = Serial.read(); //lees teken uit de serial buffer
+		inData = Serial.read();
 
-		if (Ser_count > 2 && Ser_count < 11) { //dit moeten altijd getallen zijn...
-			if (teken >= '0' && teken <= '9')getal = teken - '0';
-		}
+		if (commandcount > 0) {
+			command[commandcount - 1] = inData;
+			commandcount++;
+			if (commandcount > 4) { //volledig command van 4 bytes ontvangen 1xstart + 3databytes
+				commandcount = 0;
 
-		switch (teken) {
-		case '<': //start
-			Ser_count = 1; //Set command teller 2xCHAR 4xcyfer>int 4xcyfer>int
-			Scmd_char[0] = '-'; Scmd_char[1] = '-'; Scmd_value[0] = 0; Scmd_value[1] = 0;
-			//Serial.print("jopie");
-			break;
-
-		default: //teken
-
-			switch (Ser_count) {
-			case 0: //doe niks nadah
-				break;
-			case 1: //eerste char van commandcode
-				Scmd_char[0] = teken;
-				//Ser_count=2;
-				break;
-			case 2: //tweede char van command code
-				Scmd_char[1] = teken;
-				//Ser_count=3;
-				break;
-			case 3: //hoogste cyfer eerste getal
-				Scmd_value[0] += getal * 1000;
-				//Ser_count=4;
-				break;
-			case 4:
-				Scmd_value[0] += getal * 100;
-				//Ser_count=5;
-				break;
-			case 5:
-				Scmd_value[0] += getal * 10;
-				//Ser_count=6;
-				break;
-			case 6:
-				Scmd_value[0] += getal;
-				//Ser_count=7;
-				break;
-			case 7: //hoogste cyfer in eerste getal
-				Scmd_value[1] += getal * 1000;
-				//Ser_count=8;
-				break;
-			case 8:
-				Scmd_value[1] += getal * 100;
-				//Ser_count=9;
-				break;
-			case 9:
-				Scmd_value[1] += getal * 10;
-				//Ser_count = 10;
-				break;
-			case 10:
-				Scmd_value[0] += getal;
-				Ser_count = 0;
-				//command klaar alleen hieruit verder gaan.
-				Ser_command();
-				break;
+				Command_exe(); //voer commando uit
 			}
-
-			Ser_count++; //volgende teken
-			break;
+		}
+		else if (inData == 255) { //dus niet groter dan 0 dus 0 en 0xFF
+			//start byte voor command, niks mee doen dus alleen teller omhoog
+			commandcount++; //volgende doorloop counter op 1			
 		}
 	}
 }
-void Ser_command() { // Scmd_char Scmd_value bevatten nu het laatste 'command' 
-	//uitvoeren van dit command
-	Serial.print(Scmd_char[0]); Serial.print(Scmd_char[1]);
+
+void command_clear() { // ???? gebruiken we dit wel?  clears USB command buffer
+	for (byte i = 0; i < 4; i++) {
+		command[i] = 0;
+	}
+}
+void Command_exe() { //voert hetvia usb ontvangen command uit
+
+	//////toon ontvangst op display, alleen bij debug
+	//dp.clearDisplay();
+	//dp.setCursor(5, 5);
+	//dp.setTextColor(1);
+	//for (byte i = 0; i < 4; i++) { //command 0~6 zijn der 7
+	//	dp.println(command[i]);
+	//}
+	//dp.display();
+
+	switch (command[0]) {
+
+	case 1: //rq data, vraag om data
+		switch (command[1]) {
+		case 1: //rq data product id
+			//Maak communicatie mogelijk
+			GPIOR1 |= (1 << 1); //flag voor comm open
+			send(101, 10, 254, 254); //send Productid DCCmonitor, no value B11111110 niet gebruikt.
+			//send(2, Prst, 254, 254); //send instelling preset
+			send_outputs();
+			break;
+		}
+		break;
+
+	case 50: //ontvangen instelling voor de outputs
+		int adres = 0;
+		preset[Prst].outputType = command[1];
+		adres += command[2] * 255; //command[3]=MSB
+		adres += command[3]; //is LSB
+		preset[Prst].adres = adres;
+		MEM_write();
+		if (program) DP_prg();
+		break;
+	}
+}
+void send_outputs() {
+	//called van verschillende plekken waar de output paraas veranderen.
+	send(2, Prst, 254, 254); //send instelling preset
+	send(50, preset[Prst].outputType, getMSB(preset[Prst].adres), getLSB(preset[Prst].adres)); //outputtype en adres
+}
+void send_command() { //stuurt DCC command naar WMApp
+	send(10, data[0], data[1], data[2]);
+	//10=DCCcommand 
+	//data[0]=adresbyte 1
+	//data[1]=instructie byte 1
+	//data[2]=checksum of adresbyte 2
+
+
+	/*Serial.print(255);
+	for (byte i = 0; i < 3; i++) {
+		Serial.print("   ");
+		Serial.print(data[i],BIN);
+	}
+	Serial.println("");*/
+}
+byte getMSB(int val) {
+	byte msb = 0;
+	while (val > 255) {
+		val -= 255;
+		msb++;
+	}
+	return msb;
+}
+byte getLSB(int val) {
+	byte lsb = 0;
+	while (val > 255) {
+		val -= 255;
+	}
+	lsb = val;
+	return lsb;
 }
 
-void Ser_display() {
-	//dp.clearDisplay();
-	//dp.setTextColor(WHITE);
-	//dp.setTextSize(1);
-	//dp.setCursor(5, 5);
-	//dp.println(Ser_txt);
-	//dp.display();
+
+void send(byte b1, byte b2, byte b3, byte b4) { //stuurt vier bytes over de serial poort
+	//Alleen als Serial communicatie met WMapp er is bit 1 van GPIOR1
+	if (GPIOR1 & (1 << 1)) {
+		byte dataout[5] = { 0,0,0,0,0 };
+		dataout[0] = 255;
+		dataout[1] = b1;
+		dataout[2] = b2;
+		dataout[3] = b3;
+		dataout[4] = b4;
+		Serial.write(dataout, 5);
+	}
 }
 void setup() {
 	//start processen
@@ -284,6 +318,8 @@ void setup() {
 	GPIOR0 |= (1 << 6); //flag om eerste msg direct te tonen
 	DDRD |= (1 << 6); //OE output enabled van de shifts, zorgen dat er geen spookpulsen op de outputs komen
 	//DP_monitor();
+
+
 }
 void shift() {
 	for (byte b = 1; b < 255; b--) {
@@ -301,9 +337,6 @@ void factory() {
 		EEPROM.update(i, 0xFF);
 	}
 	dp.clearDisplay();
-	//dp.setCursor(10, 20);
-	//dp.setTextSize(2);
-	//dp.setTextColor(1);
 	setText(10, 20, 2);
 	dp.print(F("Factory"));
 	dp.display();
@@ -315,7 +348,7 @@ void DP_welcome() {
 	setText(10, 5, 1);
 	dp.println(F("www.wisselmotor.nl"));
 	setText(6, 25, 2);
-	dp.println(F("MonitorDCC"));
+	dp.println(F("DCCmonitor"));
 	setText(85, 45, 1);
 	dp.print(version);
 	dp.display();
@@ -352,10 +385,11 @@ void outputClear() {
 void loop() {
 	//processen
 	Dcc.process();
-	Serial_exe();
+	Serial_read(); //langzaam proces van maken?
 
 
 	if (millis() - slowtimer > 30) {
+
 		slowtimer = millis();
 		checkBuffer(); //check status buffer
 		SW_exe();
@@ -444,6 +478,18 @@ void SW_on(byte sw) {
 		break;
 
 	case 2:
+
+		////debug V2.01
+		//dp.clearDisplay();
+		////dp.clearDisplay();
+		//dp.setTextColor(WHITE);
+		//dp.setTextSize(1);
+		//dp.setCursor(5, 5);
+		//dp.display();
+
+		//Serial.write("DCCmonitor\n");
+		//send(101,10,254,254); //product ID; Pid van DCCmonitor, 254 is null, no value, niet gebruikt
+
 		if (program) {
 			ParaDown();
 			DP_prg();
@@ -459,8 +505,7 @@ void SW_on(byte sw) {
 void SW_off(byte sw) {
 	if (sw == 2)SW_holdcounter = 0; //reset counter for scroll function 
 }
-void DP_prg() { //iedere keer geheel vernieuwen?
-	//toont programmeer blad (6 regels?)
+void DP_prg() { //builds het programmeer scherm
 	byte px; byte py; byte w; byte h;
 	byte y = 0; //regel afstand verticaal
 	byte x[4] = { 0,26,45,68 };
@@ -513,7 +558,7 @@ void DP_prg() { //iedere keer geheel vernieuwen?
 			tens++;
 			sec -= 10;
 		}
-		dp.print(tens); dp.print("."); dp.print(sec); dp.print("s");
+		dp.print(tens); dp.print(F(".")); dp.print(sec); dp.print(F("s"));
 	}
 	else { //handmatig 'man'
 		TXT(11);
@@ -599,6 +644,7 @@ void ParaDown() {
 	case 0:
 		Prst++;
 		if (Prst > Psize - 1) Prst = 0;
+		send_outputs();
 		break;
 	case 1:
 		preset[Prst].reg ^= (1 << 1);//flip  preset[Prst].reg bit1 lijst of apart
@@ -637,7 +683,9 @@ void ParaDown() {
 	case 12: //output type
 		preset[Prst].outputType++;
 		if (preset[Prst].outputType > 3)preset[Prst].outputType = 0;
-		preset[Prst].adres = 1; //veranderen output types geeft reset adres
+
+		preset[Prst].adres = 1; //veranderen output types geeft reset adres		
+
 		StartISR(false);
 		switch (preset[Prst].outputType) {
 		case 2:
@@ -651,10 +699,12 @@ void ParaDown() {
 			break;
 		}
 
+
 		out[0] = 0; out[1] = 0; shift(); outputClear();
 		PORTD &= ~(1 << 5);
 		SpeedStatus[0] = 0;
 
+		send_outputs();
 		break;
 	case 13: //adres
 		int t = 512;
@@ -669,18 +719,22 @@ void ParaDown() {
 			}
 			if (preset[Prst].adres > t)preset[Prst].adres = 1;
 		}
+		send_outputs();
 		break;
 	}
 }
 void notifyDccMsg(DCC_MSG* Msg) {
 	//uitschakelen in program mode
+
 	if (GPIOR0 & (1 << 2))return;
 	//direct achter elkaar ontvangen gelijke msg's uitfilteren	
 	bool nieuw = true;
+	TX; //set boolean voor send command naar WMapp
+
 	for (byte i = 0; i < MAX_DCC_MESSAGE_LEN; i++) {
 		if (lastmsg[i] != Msg->Data[i]) nieuw = false;
 	}
-	if (nieuw)return;
+	if (nieuw)return; //Verlaat functie zelfde commands na elkaar worden overgeslagen
 
 	//databytes uit de library opslaan in tijdelijk geheugen
 	for (byte i; i < MAX_DCC_MESSAGE_LEN; i++) {
@@ -697,9 +751,12 @@ void notifyDccMsg(DCC_MSG* Msg) {
 	}
 
 
+
+
 	byte bte;  int adr = 0; byte reg = 0; //verdelen op soort msg op basis van 1e byte
 	//db = data[0];
 	if (data[0] == 0) {	//broadcast voor alle decoder bedoeld
+		noTX; //geen message naar WMapp sturen
 	}
 	else if (data[0] < 128) {//loc decoder met 7bit adres
 		Loc(true);
@@ -718,6 +775,7 @@ void notifyDccMsg(DCC_MSG* Msg) {
 		int decoderAdres = adr;
 
 		//CV of bediening van artikel
+
 		adr = adr * 4;
 		if (~bte & (1 << 2))adr -= 2;
 		if (~bte & (1 << 1))adr -= 1;
@@ -762,11 +820,17 @@ void notifyDccMsg(DCC_MSG* Msg) {
 	}
 	else if (data[0] < 255) {
 		//Reserved for Future Use
+		noTX; //niet naar WMapp
 	}
 	else {
 		//adress=255 idle packett
+		noTX; //niet naar app
 	}
+	//proberen om alleen mutaties te versturen
+	if (GPIOR1 & (1 << 0)) send_command(); //bit0 van GPIOR1 flag voor versturen command
+
 }
+
 void checkBuffer() {
 	//hangende buffers wissen
 	countautodelete++;
@@ -804,6 +868,9 @@ void checkBuffer() {
 	if (GPIOR0 & (1 << 1))PIND |= (1 << 4);
 }
 void Loc(bool t) {
+	noTX; //niet versturen aan WMapp,  filter van DCCmonitor gebruiken, loc commands die 
+	//naar de display worden gestuurd in locwrite die worden weer wel naar de WMapp gestuurd
+
 	if (t) { //7 bits adres
 		T_adres = data[0];
 		T_instructie = data[1];
@@ -908,6 +975,7 @@ void LocMsgCV() {
 	//Debug_bfr(true, buffer);
 }
 void LocMsg(byte tiep) { //called from loc() 1=drive 2=function 1 3 = function2
+
 	if (~preset[Prst].filter & (1 << 0))return; //Filter voor Loc msg
 	for (byte i = 0; i < Bsize; i++) {
 		if ((~bfr[i].reg & (1 << 6)) && (bfr[i].adres == T_adres) && (bfr[i].reg & (1 << 2))) { //drive msg/functions
@@ -920,6 +988,7 @@ void LocMsg(byte tiep) { //called from loc() 1=drive 2=function 1 3 = function2
 				else {
 					bfr[i].instructie = T_instructie;
 					changed(i);
+					TX; //drive loc veranderd dus naar WMapp
 					return; //verlaat function
 				}
 				break;
@@ -937,6 +1006,7 @@ void LocMsg(byte tiep) { //called from loc() 1=drive 2=function 1 3 = function2
 					//uitgaande dat CV29bit1=true (28 snelheidsstappen) geeft bit 4 FL(headlights) bit0 F1 bit3 F3					
 					bfr[i].db[0] = GPIOR2;
 					changed(i);
+					TX; //function block 1 aangepast, sturen aan WMapp
 					return;
 				}
 				break;
@@ -958,14 +1028,17 @@ void LocMsg(byte tiep) { //called from loc() 1=drive 2=function 1 3 = function2
 				else {
 					bfr[i].db[1] = GPIOR2;
 					changed(i);
+					TX; //function block 2 veranderd dus sturen
 					return;
 				}
 				break;
 			}
 		}
 	}
-	Write_Loc();
+
+	Write_Loc(); //alleen NIEUWE loc commands
 }
+
 void changed(byte b) {
 	bfr[b].tijd = millis();
 	bfr[b].reg |= (1 << 7); //msg weer tonen
@@ -988,7 +1061,9 @@ byte FreeBfr() {
 	return Bsize;
 }
 void Write_Loc() { //adres en instructiebyte
-	byte free = FreeBfr();
+
+	TX;
+	byte free = FreeBfr(); //zoek een vrije buffer
 	if (free == Bsize) return;  //Hier misschien nog een foutafhandeling?
 	clearBuffer(free);
 	bfr[free].adres = T_adres;
@@ -1012,7 +1087,6 @@ void clearBuffer(byte buffer) {
 	bfr[buffer].db[1] = 0;
 	bfr[buffer].db[2] = 0;
 }
-
 /*
 void Debug_bfr(bool n, byte buffer) {
 
@@ -1177,7 +1251,7 @@ bool IO_dp() { //displays msg's
 
 	if (bfr[Bcount].reg & (1 << 3)) { //CV
 		setText(xE[2], yR[1], s);
-		dp.print("CV"); dp.print(CVadres);
+		dp.print(F("CV")); dp.print(CVadres);
 		setText(xE[4], yR[1], s); dp.print(CVvalue);
 
 		//als in single mode CV value byte binair tonen
@@ -1215,7 +1289,7 @@ bool IO_dp() { //displays msg's
 					}
 					DP_symbol(xE[2], yR[1], 10, s);
 					setText(xE[3], yR[1], s);
-					dp.print(puls); dp.print("ms");
+					dp.print(puls); dp.print(F("ms"));
 				}
 
 				else { //aan en uit msg tonen

@@ -31,6 +31,10 @@ bit5 True: monitor instellen eenmalig na powerup
 bit6 True: nieuw msg direct doorzetten in converter mode. 
 bit7
 
+GPIOR1 gebruiken voor booleans in de serial communicatie met WMapp
+bit0 true stuur: command door aan WMapp, false: niet sturen van dit command
+
+
 GPIOR2 gpio flags lokaal, dus binnen 1 functie alleen gebruiken
 
 
