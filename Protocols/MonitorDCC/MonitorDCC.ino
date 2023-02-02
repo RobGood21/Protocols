@@ -116,7 +116,7 @@ byte speedCount;
 
 //tbv Serial naar WMapp
 byte commandcount = 0;
-byte command[4];
+byte command[6];
 
 void MEM_read() {
 	int t;
@@ -175,7 +175,7 @@ void Serial_read() {
 		if (commandcount > 0) {
 			command[commandcount - 1] = inData;
 			commandcount++;
-			if (commandcount > 4) { //volledig command van 4 bytes ontvangen 1xstart + 3databytes
+			if (commandcount > 6) { //volledig command van 4 bytes ontvangen 1xstart + 4databytes
 				commandcount = 0;
 
 				Command_exe(); //voer commando uit
@@ -189,17 +189,17 @@ void Serial_read() {
 }
 
 void command_clear() { // ???? gebruiken we dit wel?  clears USB command buffer
-	for (byte i = 0; i < 4; i++) {
+	for (byte i = 0; i < 6; i++) {
 		command[i] = 0;
 	}
 }
 void Command_exe() { //voert hetvia usb ontvangen command uit
 
-	//////toon ontvangst op display, alleen bij debug
+	////////toon ontvangst op display, alleen bij debug
 	//dp.clearDisplay();
 	//dp.setCursor(5, 5);
 	//dp.setTextColor(1);
-	//for (byte i = 0; i < 4; i++) { //command 0~6 zijn der 7
+	//for (byte i = 0; i < 6; i++) { //command 0~6 zijn der 7
 	//	dp.println(command[i]);
 	//}
 	//dp.display();
@@ -211,7 +211,7 @@ void Command_exe() { //voert hetvia usb ontvangen command uit
 		case 1: //rq data product id
 			//Maak communicatie mogelijk
 			GPIOR1 |= (1 << 1); //flag voor comm open
-			send(101, 10, 254, 254); //send Productid DCCmonitor, no value B11111110 niet gebruikt.
+			send(101, 10, 254, 254, 254, 254); //send Productid DCCmonitor, no value B11111110 niet gebruikt.
 			//send(2, Prst, 254, 254); //send instelling preset
 			send_outputs();
 			break;
@@ -231,11 +231,11 @@ void Command_exe() { //voert hetvia usb ontvangen command uit
 }
 void send_outputs() {
 	//called van verschillende plekken waar de output paraas veranderen.
-	send(2, Prst, 254, 254); //send instelling preset
-	send(50, preset[Prst].outputType, getMSB(preset[Prst].adres), getLSB(preset[Prst].adres)); //outputtype en adres
+	send(2, Prst, 254, 254, 254,254); //send instelling preset
+	send(50, preset[Prst].outputType, getMSB(preset[Prst].adres), getLSB(preset[Prst].adres), 254,254); //outputtype en adres
 }
 void send_command() { //stuurt DCC command naar WMApp
-	send(10, data[0], data[1], data[2]);
+	send(10, data[0], data[1], data[2], data[3],data[4]);
 	//10=DCCcommand 
 	//data[0]=adresbyte 1
 	//data[1]=instructie byte 1
@@ -265,18 +265,18 @@ byte getLSB(int val) {
 	lsb = val;
 	return lsb;
 }
-
-
-void send(byte b1, byte b2, byte b3, byte b4) { //stuurt vier bytes over de serial poort
+void send(byte b1, byte b2, byte b3, byte b4, byte b5, byte b6) { //stuurt vier bytes over de serial poort
 	//Alleen als Serial communicatie met WMapp er is bit 1 van GPIOR1
 	if (GPIOR1 & (1 << 1)) {
-		byte dataout[5] = { 0,0,0,0,0 };
+		byte dataout[6] = { 0,0,0,0,0,0};
 		dataout[0] = 255;
 		dataout[1] = b1;
 		dataout[2] = b2;
 		dataout[3] = b3;
 		dataout[4] = b4;
-		Serial.write(dataout, 5);
+		dataout[5] = b5;
+		dataout[6] = b6;
+		Serial.write(dataout, 7);
 	}
 }
 void setup() {
@@ -750,9 +750,6 @@ void notifyDccMsg(DCC_MSG* Msg) {
 		}
 	}
 
-
-
-
 	byte bte;  int adr = 0; byte reg = 0; //verdelen op soort msg op basis van 1e byte
 	//db = data[0];
 	if (data[0] == 0) {	//broadcast voor alle decoder bedoeld
@@ -908,6 +905,7 @@ void Loc(bool t) {
 		break;
 	case B111:
 		if (preset[Prst].filter & (1 << 3))LocMsgCV();
+		TX;
 		break;
 	}
 }
