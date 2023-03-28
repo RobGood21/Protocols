@@ -33,7 +33,8 @@ bit7
 
 GPIOR1 gebruiken voor booleans in de serial communicatie met WMapp
 bit0 true stuur: command door aan WMapp, false: niet sturen van dit command
-
+bit1 =com open naar WMapp
+bit2 true filter dubbele basic accessory commands niet uit, false (default) doe dit wel
 
 GPIOR2 gpio flags lokaal, dus binnen 1 functie alleen gebruiken
 

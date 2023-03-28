@@ -204,10 +204,14 @@ void Command_exe() { //voert hetvia usb ontvangen command uit
 	//}
 	//dp.display();
 
+	//DP_debug();
+
 	switch (command[0]) {
 
 	case 1: //rq data, vraag om data
+
 		switch (command[1]) {
+		
 		case 1: //rq data product id
 			//Maak communicatie mogelijk
 			GPIOR1 |= (1 << 1); //flag voor comm open
@@ -216,6 +220,17 @@ void Command_exe() { //voert hetvia usb ontvangen command uit
 			send_outputs();
 			break;
 		}
+
+		break;
+	case 2: 
+		//DP_debug();
+		if (command[1] == 0) {
+			GPIOR1 &= ~(1 << 2);
+		}
+		else {
+			GPIOR1 |= (1 << 2);
+		}
+
 		break;
 
 	case 50: //ontvangen instelling voor de outputs
@@ -228,14 +243,26 @@ void Command_exe() { //voert hetvia usb ontvangen command uit
 		if (program) DP_prg();
 		break;
 	}
+
 }
+
+void DP_debug() {
+	//Openings tekst
+	dp.clearDisplay();
+	setText(10, 5, 1);
+	dp.setTextSize(1);
+	dp.print("debug  Commandbyte 1= "); dp.println(command[0]);
+	dp.display();
+	delay(2000);
+}
+
 void send_outputs() {
 	//called van verschillende plekken waar de output paraas veranderen.
-	send(2, Prst, 254, 254, 254,254); //send instelling preset
-	send(50, preset[Prst].outputType, getMSB(preset[Prst].adres), getLSB(preset[Prst].adres), 254,254); //outputtype en adres
+	send(2, Prst, 254, 254, 254, 254); //send instelling preset
+	send(50, preset[Prst].outputType, getMSB(preset[Prst].adres), getLSB(preset[Prst].adres), 254, 254); //outputtype en adres
 }
 void send_command() { //stuurt DCC command naar WMApp
-	send(10, data[0], data[1], data[2], data[3],data[4]);
+	send(10, data[0], data[1], data[2], data[3], data[4]);
 	//10=DCCcommand 
 	//data[0]=adresbyte 1
 	//data[1]=instructie byte 1
@@ -268,7 +295,7 @@ byte getLSB(int val) {
 void send(byte b1, byte b2, byte b3, byte b4, byte b5, byte b6) { //stuurt vier bytes over de serial poort
 	//Alleen als Serial communicatie met WMapp er is bit 1 van GPIOR1
 	if (GPIOR1 & (1 << 1)) {
-		byte dataout[6] = { 0,0,0,0,0,0};
+		byte dataout[6] = { 0,0,0,0,0,0 };
 		dataout[0] = 255;
 		dataout[1] = b1;
 		dataout[2] = b2;
@@ -734,7 +761,13 @@ void notifyDccMsg(DCC_MSG* Msg) {
 	for (byte i = 0; i < MAX_DCC_MESSAGE_LEN; i++) {
 		if (lastmsg[i] != Msg->Data[i]) nieuw = false;
 	}
-	if (nieuw)return; //Verlaat functie zelfde commands na elkaar worden overgeslagen
+	//}
+
+	if (~GPIOR1 & (1 << 2)) {
+		if (nieuw) return; //Verlaat functie zelfde commands na elkaar worden overgeslagen
+	}
+
+
 
 	//databytes uit de library opslaan in tijdelijk geheugen
 	for (byte i; i < MAX_DCC_MESSAGE_LEN; i++) {
